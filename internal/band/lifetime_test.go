@@ -58,3 +58,18 @@ func TestSessionLifetimesFailures(t *testing.T) {
 		t.Error("잘못된 토큰은 0이어야 한다")
 	}
 }
+
+func TestSessionAlive(t *testing.T) {
+	cases := map[string]bool{
+		"https://band.us/home":                          true,
+		"https://band.us/band/12345":                    true,
+		"https://www.band.us/about/kr/intro":            false,
+		"https://auth.band.us/login_page?next_url=home": false,
+		"https://band.us/login?next=%2Fhome":            false,
+	}
+	for u, want := range cases {
+		if got := SessionAlive(u); got != want {
+			t.Errorf("%s: %v, want %v", u, got, want)
+		}
+	}
+}

@@ -7,6 +7,7 @@
 //	batch status    최근 실행 기록과 다시 시도할 글을 보여 준다.
 //	batch weekly    카카오톡 대화방의 지난주 대화를 요약해서 Telegram으로 보낸다(월요일 아침 실행).
 //	batch seed      로컬 DB에 가상의 데모 데이터를 넣는다(make db-seed).
+//	batch probe     세션 복사본으로 밴드 홈을 만료 전후에 열어 토큰을 다시 발급하는지 시험한다.
 package main
 
 import (
@@ -54,6 +55,8 @@ func main() {
 		err = summarizeWeek(ctx, log, os.Args[2:])
 	case "seed":
 		err = seed(ctx, log, os.Args[2:])
+	case "probe":
+		err = probe(log)
 	default:
 		usage()
 	}
@@ -64,7 +67,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "사용법: batch <migrate|unlock|login|run|status|weekly|seed> [-limit N] [-recheck-days N] [-redo-from N] [-redo-posts N,N]")
+	fmt.Fprintln(os.Stderr, "사용법: batch <migrate|unlock|login|run|status|weekly|seed|probe> [-limit N] [-recheck-days N] [-redo-from N] [-redo-posts N,N]")
 	os.Exit(2)
 }
 

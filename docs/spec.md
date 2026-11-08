@@ -256,6 +256,7 @@ make release ARGS=<커밋>      # origin/main에 있는 그 커밋까지만 배�
 GitHub Actions가 GCP 토큰을 받는 Workload Identity Federation 공급자에는 이 저장소의 `release` 브랜치 조건이 걸려 있다. 배포 브랜치를 바꾸면 `scripts/gcp-setup.sh`의 조건도 고치고 `make gcp-setup`을 다시 실행한다.
 
 - 밴드 세션이 만료되면 Job이 실패하고 알림 메일이 온다. `make band-renew`(`make band-login` 뒤에 `make band-secret`)를 실행한다. Job은 비밀의 최신 버전을 읽으므로 다시 배포하지 않아도 된다.
+- `batch probe`는 밴드가 토큰을 만료 전에 다시 발급하는지 보는 시험 명령이다. 세션의 복사본으로 만료 18시간 전부터 만료 5분 뒤까지 밴드 홈을 몇 번 열고 `band_session`과 `rt`의 만료 시각만 로그에 남긴다. 운영 비밀에는 쓰지 않는다. 그 세션을 쓰는 마지막 정기 실행 뒤에 시작한다.
 - Claude API 키를 바꾸려면 `gcloud secrets versions add claude-api-key --data-file=-`로 새 버전을 올린다.
 - 웹 서버는 `robots.txt`와 `X-Robots-Tag: noindex`로 검색엔진 수집을 막는다.
 - Firebase Hosting과 Cloud Run 앞단이 응답을 압축해 주지 않으므로 웹 서버가 HTML, CSS, JS 응답을 gzip으로 압축한다. 정적 파일은 시작할 때 한 번 압축해 둔다. 이미지, 512바이트보다 작은 응답, 이미 `Content-Encoding`이 붙은 응답은 압축하지 않는다.

@@ -7,7 +7,53 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/mxschmitt/playwright-go"
 )
+
+// Visit은 statePath의 세션으로 밴드 홈을 헤드리스로 열고, 화면의 스크립트가 wait 동안 돌게 둔 뒤
+// 브라우저가 가진 세션으로 statePath를 덮어쓴다. 밴드가 토큰을 만료 전에 다시 발급하는지 시험할 때 쓴다.
+// 파일을 덮어쓰므로 운영 세션의 복사본을 넘긴다. 세션이 끝나서 로그인 화면이나 소개 페이지로 옮겨 가면 false다.
+func Visit(statePath string, wait time.Duration) (bool, error) {
+	pw, err := playwright.Run()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = pw.Stop() }()
+	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(true)})
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = browser.Close() }()
+	bctx, err := newContext(browser, statePath)
+	if err != nil {
+		return false, err
+	}
+	page, err := bctx.NewPage()
+	if err != nil {
+		return false, err
+	}
+	if _, err := page.Goto("https://band.us/home", playwright.PageGotoOptions{WaitUntil: playwright.WaitUntilStateDomcontentloaded}); err != nil {
+		return false, err
+	}
+	// 기다릴 요소가 따로 없다. 브라우저는 별도 프로세스라서 그동안에도 화면의 스크립트가 돈다.
+	time.Sleep(wait)
+	alive := SessionAlive(page.URL())
+	tmp := statePath + ".tmp"
+	if _, err := bctx.StorageState(playwright.BrowserContextStorageStateOptions{Path: playwright.String(tmp)}); err != nil {
+		return false, err
+	}
+	if err := os.Chmod(tmp, 0o600); err != nil {
+		return false, err
+	}
+	return alive, os.Rename(tmp, statePath)
+}
+
+// SessionAlive는 밴드 홈을 연 뒤의 주소로 세션이 살아 있는지 판단한다.
+// 세션이 끝났으면 홈은 소개 페이지(www.band.us/about/…)로, 다른 화면은 로그인 화면으로 옮겨 간다.
+func SessionAlive(pageURL string) bool {
+	return !IsLoginURL(pageURL) && !strings.Contains(pageURL, "/about/")
+}
 
 // sessionCookies는 로그인 상태를 정하는 쿠키 이름이다.
 var sessionCookies = []string{"band_session", "rt", "SESSION"}
