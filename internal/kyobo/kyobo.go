@@ -18,7 +18,7 @@ import (
 	"github.com/yonsei-alumni/abc-library/internal/book"
 )
 
-const userAgent = "abc-library/0.1 (+https://github.com/yonsei-alumni/abc-library)"
+const userAgent = "abc-library/0.1 (+https://github.com/yonsei-reunion/abc-library)"
 
 // Edition은 교보문고 검색 결과의 판본 하나다. 잡지처럼 ISBN-13이 없는 상품은 ISBN13이 비어 있다.
 type Edition struct {

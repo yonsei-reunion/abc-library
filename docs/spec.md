@@ -253,7 +253,7 @@ make release ARGS=<커밋>      # origin/main에 있는 그 커밋까지만 배�
 
 `make release`는 `release`에 올라갈 커밋을 보여 주고, 그 사이에 마이그레이션이 바뀌었으면 배포할 커밋의 마이그레이션을 운영 DB에 먼저 적용한 뒤 push한다. 그래서 `.envrc`를 읽은 셸에서 실행한다. `release`에 `main`에 없는 커밋이 있으면 멈춘다. GitHub에서 `main` → `release` PR을 merge해도 배포되지만, 그때는 마이그레이션을 `make migrate`로 먼저 적용한다.
 
-GitHub Actions가 GCP 토큰을 받는 Workload Identity Federation 공급자에는 이 저장소의 `release` 브랜치 조건이 걸려 있다. 배포 브랜치를 바꾸면 `scripts/gcp-setup.sh`의 조건도 고치고 `make gcp-setup`을 다시 실행한다.
+GitHub Actions가 GCP 토큰을 받는 Workload Identity Federation 공급자에는 이 저장소의 `release` 브랜치 조건이 걸려 있다. 배포 브랜치를 바꾸면 `scripts/gcp-setup.sh`의 조건도 고치고 `make gcp-setup`을 다시 실행한다. 저장소를 옮기거나 이름을 바꾸면 GitHub이 토큰에 새 이름을 넣으므로 배포가 `rejected by the attribute condition`으로 실패한다. `scripts/gcp-env.sh`의 `GITHUB_REPO`를 고치고 공급자 조건과 배포 서비스 계정의 `workloadIdentityUser` 바인딩을 새 이름으로 바꾼다.
 
 - 밴드 세션이 만료되면 Job이 실패하고 알림 메일이 온다. `make band-renew`(`make band-login` 뒤에 `make band-secret`)를 실행한다. Job은 비밀의 최신 버전을 읽으므로 다시 배포하지 않아도 된다.
 - `batch probe`는 밴드가 토큰을 만료 전에 다시 발급하는지 보는 시험 명령이다. 세션의 복사본으로 만료 18시간 전부터 만료 5분 뒤까지 밴드 홈을 몇 번 열고 `band_session`과 `rt`의 만료 시각만 로그에 남긴다. 운영 비밀에는 쓰지 않는다. 그 세션을 쓰는 마지막 정기 실행 뒤에 시작한다.

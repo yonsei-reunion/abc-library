@@ -76,7 +76,7 @@ func NewPageTitles() *PageTitles {
 	return &PageTitles{HTTP: &http.Client{Timeout: 8 * time.Second}, MaxBytes: 512 << 10}
 }
 
-const userAgent = "abc-library/0.1 (+https://github.com/yonsei-alumni/abc-library)"
+const userAgent = "abc-library/0.1 (+https://github.com/yonsei-reunion/abc-library)"
 
 var (
 	ogTitle    = regexp.MustCompile(`(?is)<meta\s[^>]*(?:property|name)\s*=\s*["'](?:og:title|twitter:title)["'][^>]*>`)
