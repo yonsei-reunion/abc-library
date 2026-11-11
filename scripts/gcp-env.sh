@@ -28,7 +28,7 @@ WEEKLY_SCHEDULER_JOB=abc-batch-weekly
 LOGIN_SERVICE=abc-band-login
 LOGIN_REGION="$BATCH_REGION"
 # /renew를 받아 줄 텔레그램 대화방 번호. 비밀이 아니다. 비어 있으면 bandlogin을 배포하지 않는다.
-TELEGRAM_CHAT_ID=""
+TELEGRAM_CHAT_ID="7160469912"
 
 WEB_SA="abc-web@${PROJECT}.iam.gserviceaccount.com"
 BATCH_SA="abc-batch@${PROJECT}.iam.gserviceaccount.com"
