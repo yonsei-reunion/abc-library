@@ -1,7 +1,7 @@
 .PHONY: fmt lint test check ci test-integration \
 	db-up db-seed db-psql db-down db-reset web batch-local \
 	web-prod migrate migrate-unlock band-login band-renew batch status \
-	gcp-setup gcp-schedule band-secret deploy-web deploy-batch firebase-hosting release
+	gcp-setup gcp-schedule band-secret deploy-web deploy-batch deploy-bandlogin telegram-webhook bandlogin-local firebase-hosting release
 
 # 로컬 PostgreSQL(compose.yaml의 db) 연결. 이 컴퓨터에서만 쓰는 개발용 값이라 비밀이 아니다.
 # .envrc의 DB_URL은 운영 DB(Neon)를 가리키고 배포 스크립트도 그 값을 쓰므로, 로컬 DB는 명령마다 이 값으로 바꿔 쓴다.
@@ -94,11 +94,23 @@ band-secret:
 # 로그인이 실패하거나 시간이 지나면 예전 세션 파일을 올리지 않도록 거기서 멈춘다.
 band-renew: band-login band-secret
 
+# 폰에서 하는 다시 로그인(cmd/bandlogin)을 이 컴퓨터에서 시험한다. 출력한 링크를 브라우저에서 열고 로그인하면
+# 세션을 band-state.json에 저장하고 끝난다. 운영 비밀은 바꾸지 않으므로 이어서 make band-secret을 실행한다.
+bandlogin-local:
+	go run ./cmd/bandlogin -local
+
 deploy-web:
 	scripts/deploy.sh web
 
 deploy-batch:
 	scripts/deploy.sh batch
+
+deploy-bandlogin:
+	scripts/deploy.sh bandlogin
+
+# bandlogin 서비스를 텔레그램 봇의 웹훅으로 등록한다. 처음 배포한 뒤에 한 번 실행한다.
+telegram-webhook:
+	scripts/telegram-webhook.sh
 
 # origin/main을 release로 옮겨서 GitHub Actions가 배포하게 한다. 마이그레이션이 바뀌었으면 운영 DB에 먼저 적용한다.
 # 특정 커밋까지만 배포하려면 make release ARGS=<커밋>

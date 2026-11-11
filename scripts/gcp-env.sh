@@ -24,14 +24,24 @@ SCHEDULER_JOB=abc-batch-daily
 # 같은 배치 Job을 월요일 아침에 batch weekly로 실행해서 카카오톡 대화방 주간 요약을 밴드에 올린다.
 WEEKLY_SCHEDULER_JOB=abc-batch-weekly
 
+# 폰에서 밴드에 다시 로그인하는 서비스(cmd/bandlogin, docs/login-plan-b.md). 밴드가 한국 IP에서 로그인을 보도록 배치와 같은 서울에 둔다.
+LOGIN_SERVICE=abc-band-login
+LOGIN_REGION="$BATCH_REGION"
+# /renew를 받아 줄 텔레그램 대화방 번호. 비밀이 아니다. 비어 있으면 bandlogin을 배포하지 않는다.
+TELEGRAM_CHAT_ID=""
+
 WEB_SA="abc-web@${PROJECT}.iam.gserviceaccount.com"
 BATCH_SA="abc-batch@${PROJECT}.iam.gserviceaccount.com"
 SCHEDULER_SA="abc-scheduler@${PROJECT}.iam.gserviceaccount.com"
 DEPLOY_SA="abc-deployer@${PROJECT}.iam.gserviceaccount.com"
+LOGIN_SA="abc-band-login@${PROJECT}.iam.gserviceaccount.com"
 
 # Secret Manager의 비밀 이름
 DB_PWD_SECRET=db-pwd
 BAND_STATE_SECRET=band-state
+# bandlogin의 텔레그램 봇 토큰과 웹훅 비밀 토큰. bandlogin만 읽는다.
+TELEGRAM_TOKEN_SECRET=telegram-bot-token
+TELEGRAM_WEBHOOK_SECRET_NAME=telegram-webhook-secret
 # 배치가 Claude를 부를 때 쓰던 API 키. 아래 Workload Identity Federation 값이 있으면 Job에 연결하지 않는다.
 CLAUDE_KEY_SECRET=claude-api-key
 # 관리자 로그인(Google OAuth 클라이언트 보안 비밀)과 세션 쿠키 서명에 쓰는 비밀. 웹 서버만 읽는다.

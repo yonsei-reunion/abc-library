@@ -73,6 +73,11 @@ func SessionLifetimes(statePath string) ([]SessionLifetime, error) {
 	if err != nil {
 		return nil, err
 	}
+	return StateLifetimes(data)
+}
+
+// StateLifetimes는 storageState JSON에서 세션 쿠키가 언제 끝나는지 읽는다.
+func StateLifetimes(data []byte) ([]SessionLifetime, error) {
 	var state struct {
 		Cookies []struct {
 			Name    string  `json:"name"`

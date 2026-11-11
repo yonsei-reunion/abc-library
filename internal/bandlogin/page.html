@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>밴드 다시 로그인</title>
+<style>
+  body { margin: 0; font-family: sans-serif; background: #f2f2f2; color: #222; }
+  #status { padding: 8px 12px; font-size: 14px; }
+  #screen { display: block; width: 100%; max-width: 390px; margin: 0 auto; background: #fff; touch-action: manipulation; }
+  #keys { position: sticky; bottom: 0; display: flex; gap: 6px; padding: 8px; background: #ddd; justify-content: center; }
+  #keys button { flex: 1; max-width: 120px; padding: 10px 0; font-size: 15px; }
+  #typing { position: absolute; left: -1000px; top: 0; width: 10px; opacity: 0; }
+</style>
+</head>
+<body>
+<div id="status">로그인 화면을 여는 중입니다…</div>
+<img id="screen" alt="밴드 로그인 화면">
+<div id="keys">
+  <button data-key="kbd">키보드</button>
+  <button data-key="Backspace">지우기</button>
+  <button data-key="Tab">Tab</button>
+  <button data-key="Enter">Enter</button>
+</div>
+<input id="typing" autocomplete="off" autocapitalize="off" spellcheck="false">
+<script>
+(() => {
+  const status = document.getElementById('status');
+  const screen = document.getElementById('screen');
+  const typing = document.getElementById('typing');
+  const send = (body) => fetch('/login/input', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+  }).then((r) => { if (!r.ok && r.status === 404) status.textContent = '로그인 화면이 닫혔습니다.'; });
+
+  // 입력창에 빈칸 하나를 남겨 두고, 그 뒤에 들어온 글자를 보내고 지운다. 빈칸이 지워지면 지우기로 본다.
+  const reset = () => { typing.value = ' '; };
+  reset();
+  typing.addEventListener('input', () => {
+    const v = typing.value;
+    if (v.length === 0) send({type: 'key', key: 'Backspace'});
+    else if (v.length > 1) send({type: 'text', text: v.slice(1)});
+    reset();
+  });
+  typing.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); send({type: 'key', key: e.key}); }
+  });
+  const keyboard = () => { typing.focus({preventScroll: true}); };
+
+  screen.addEventListener('click', (e) => {
+    const r = screen.getBoundingClientRect();
+    send({type: 'tap', x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height});
+    keyboard();
+  });
+  document.getElementById('keys').addEventListener('click', (e) => {
+    const k = e.target.dataset && e.target.dataset.key;
+    if (!k) return;
+    if (k !== 'kbd') send({type: 'key', key: k});
+    keyboard();
+  });
+
+  const watch = () => {
+    const es = new EventSource('/login/frames');
+    es.onmessage = (e) => {
+      screen.src = 'data:image/jpeg;base64,' + e.data;
+      status.textContent = '화면을 눌러 로그인하세요. 글자는 키보드로, 지우기와 Enter는 아래 단추로도 됩니다.';
+    };
+    es.addEventListener('done', (e) => { status.textContent = e.data; es.close(); });
+    es.onerror = () => { status.textContent = '연결이 끊겼습니다. 다시 연결하는 중입니다…'; };
+  };
+
+  const token = location.hash.slice(1);
+  history.replaceState(null, '', location.pathname);
+  fetch('/login/claim', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({token})})
+    .then((r) => {
+      if (!r.ok) { status.textContent = '링크가 만료되었거나 다른 기기에서 이미 열었습니다. 텔레그램에서 /renew를 다시 보내세요.'; return; }
+      watch();
+    });
+})();
+</script>
+</body>
+</html>

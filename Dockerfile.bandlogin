@@ -1,0 +1,30 @@
+# 폰에서 밴드에 다시 로그인하는 서비스(cmd/bandlogin)의 이미지. 배치처럼 창 없이 돌기 때문에 전체 Chromium 대신 Chromium headless shell만 넣는다.
+# Playwright 공식 이미지는 Chromium, Firefox, WebKit이 모두 들어 있어서 3GB가 넘는다.
+FROM golang:1.27.3-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/bandlogin ./cmd/bandlogin \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/playwright-go github.com/mxschmitt/playwright-go/cmd/playwright
+
+# Playwright가 지원하는 배포판이어야 --with-deps로 브라우저가 쓰는 라이브러리를 설치할 수 있다.
+FROM ubuntu:24.04
+ENV PLAYWRIGHT_DRIVER_PATH=/opt/playwright-go \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    TZ=Asia/Seoul
+COPY --from=build /out/playwright-go /tmp/playwright-go
+# playwright-go 드라이버(Node.js와 playwright-core)와 headless shell을 이미지 빌드 때 받아 둔다.
+# 실행 때 band.InstallHeadlessBrowser가 설치 여부를 확인하면서 /ms-playwright/.links의 링크 파일을 다시 쓰므로
+# 실행 사용자가 그 디렉터리에 쓸 수 있게 한다.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && /tmp/playwright-go install --with-deps --only-shell chromium \
+ && rm -rf /tmp/playwright-go /var/lib/apt/lists/* \
+ && chmod -R a+rX /opt/playwright-go /ms-playwright \
+ && chmod -R a+w /ms-playwright/.links \
+ && chmod a+w /ms-playwright \
+ && useradd --create-home --uid 1001 bandlogin
+COPY --from=build /out/bandlogin /bandlogin
+USER bandlogin
+ENTRYPOINT ["/bandlogin"]

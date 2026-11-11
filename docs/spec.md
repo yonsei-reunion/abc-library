@@ -185,6 +185,7 @@ go run ./cmd/batch weekly -band-no <시험용 밴드 번호>   # 시험용 밴�
 | Claude 인증 | 운영 배치는 Workload Identity Federation으로 Claude Console 조직의 `abc-library` 워크스페이스(월 지출 한도 $200)에서 인증한다. Max 구독의 월 API 크레딧에서 비용이 빠진다. 로컬은 `CLAUDE_API_KEY` |
 | 이미지 | Artifact Registry `abc-library` 저장소(웹은 `asia-southeast1`, 배치는 `asia-northeast3`). 최근 5개만 남긴다 |
 | 실행 일정 | Cloud Scheduler `abc-batch-daily`가 매일 03:00(KST)에 Job을 실행하고, `abc-batch-weekly`가 매주 월요일 07:00(KST)에 같은 Job을 인자 `weekly`로 실행한다(대화방 주간 요약). Job이 실패하면 Cloud Monitoring이 메일을 보낸다 |
+| 밴드 다시 로그인 | Cloud Run 서비스 `abc-band-login`(`cmd/bandlogin`), `asia-northeast3`(서울). 텔레그램 봇에 `/renew`를 보내면 폰에서 로그인할 1회용 링크를 답한다 |
 | 대화방 메시지 | 운영자의 Google 스프레드시트. kakao-to-google-sheet 앱이 쌓고, 시트에 붙은 Apps Script 웹 앱으로 읽는다 |
 
 ## 로컬 개발
@@ -217,6 +218,10 @@ go run ./cmd/batch weekly -band-no <시험용 밴드 번호>   # 시험용 밴�
 | `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 보안 비밀 |
 | `SESSION_SECRET` | 세션 쿠키 서명 값(32바이트 이상). 바꾸면 모든 사람이 로그아웃된다 |
 | `USER_ID_SECRET` | Google 계정 고유 번호를 HMAC-SHA256할 키(32바이트 이상). 없으면 관리자 로그인만 쓰고 북마크는 쓰지 않는다. 바꾸면 모든 사용자가 새 사용자가 되어 북마크를 잃으므로 바꾸지 않는다 |
+| `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰. bandlogin이 링크와 결과를 보내고, 배치가 세션 만료 알림을 보낸다 |
+| `TELEGRAM_CHAT_ID` | 봇이 명령을 받고 알림을 보낼 대화방 번호. 배치는 이 값과 봇 토큰이 함께 있을 때만 알린다 |
+| `TELEGRAM_WEBHOOK_SECRET` | 텔레그램 웹훅의 비밀 토큰(`X-Telegram-Bot-Api-Secret-Token`). bandlogin만 쓴다 |
+| `GOOGLE_CLOUD_PROJECT`, `BAND_STATE_SECRET` | bandlogin이 세션을 올릴 Secret Manager 프로젝트와 비밀 이름(기본 `band-state`) |
 | `SITE_URL` | 사이트 공개 주소(기본 `http://localhost:{PORT}`). 로그인 리디렉션 URI와 POST 요청의 출처 확인에 쓴다. 주간 요약은 책 상세 화면 링크에 쓴다(기본 `https://abc-lib.web.app`) |
 
 ## 배포
@@ -227,7 +232,8 @@ Google Cloud 프로젝트 `abc-library-512606`(이름 abc-library)에 배포한�
 |---|---|
 | 웹 서버 | Cloud Run 서비스 `abc-library`, 서비스 계정 `abc-web`, 최소 인스턴스 0, 공개 접근 |
 | 일일 배치 | Cloud Run Job `abc-batch`, 서비스 계정 `abc-batch`, 2 vCPU, 2GiB, 제한 시간 1시간, 재시도 없음 |
-| 비밀 값 | `db-pwd`(웹, 배치), `band-state`(배치, `/secrets/band/band-state.json`에 파일로 올림), `claude-api-key`(배치), `kakao-sheet-url`, `kakao-sheet-token`(배치), `google-client-secret`, `session-secret`, `user-id-secret`(웹) |
+| 밴드 다시 로그인 | Cloud Run 서비스 `abc-band-login`, 서비스 계정 `abc-band-login`, 최소 인스턴스 0, 최대 1, 동시성 10, 요청 제한 시간 15분, CPU 늘 사용, 1 vCPU, 2GiB, 공개 접근. `scripts/gcp-env.sh`의 `TELEGRAM_CHAT_ID`가 비어 있으면 배포하지 않는다 |
+| 비밀 값 | `db-pwd`(웹, 배치), `band-state`(배치, `/secrets/band/band-state.json`에 파일로 올림), `claude-api-key`(배치), `kakao-sheet-url`, `kakao-sheet-token`(배치), `google-client-secret`, `session-secret`, `user-id-secret`(웹), `telegram-bot-token`(bandlogin, 배치), `telegram-webhook-secret`(bandlogin). bandlogin은 `band-state`의 값을 읽지 못하고 새 버전 올리기와 버전 끄기만 한다 |
 | 실행 일정 | `abc-batch-daily`(매일 03:00, `run`), `abc-batch-weekly`(월요일 07:00, 같은 Job을 overrides로 `weekly` 실행) |
 | 실행 계정 | `abc-scheduler`(Job 실행. 주간 요약의 인자 바꾸기에 `roles/run.jobsExecutorWithOverrides`가 필요하다), `abc-deployer`(GitHub Actions 배포) |
 
@@ -239,7 +245,11 @@ make band-secret                # band-state.json을 Secret Manager에 올림
 make deploy-web deploy-batch    # 이미지 빌드, 푸시, 배포(DB_URL도 이때 설정)
 make gcp-schedule               # 매일 실행, 월요일 주간 요약, 실패 알림
 make firebase-hosting           # https://abc-lib.web.app을 웹 서비스에 연결
+make deploy-bandlogin           # 밴드 다시 로그인 서비스(공개 접근은 처음 배포할 때만 설정된다)
+make telegram-webhook           # bandlogin 주소를 텔레그램 봇 웹훅으로 등록
 ```
+
+bandlogin은 GitHub Actions의 배포 계정이 공개 접근(IAM)을 설정하지 못하므로 처음 한 번은 이 컴퓨터에서 `make deploy-bandlogin`으로 배포한다. 그 뒤에는 웹과 배치처럼 `release`에 merge하면 바뀐 경우에만 배포된다.
 
 `make firebase-hosting` 전에 Firebase 콘솔에서 이 프로젝트에 Firebase를 한 번 추가해야 한다(약관 동의와 Blaze 요금제 확인). Firebase 프로젝트를 지우면 GCP 프로젝트 전체가 지워지므로 지우지 않는다.
 
@@ -255,7 +265,7 @@ make release ARGS=<커밋>      # origin/main에 있는 그 커밋까지만 배�
 
 GitHub Actions가 GCP 토큰을 받는 Workload Identity Federation 공급자에는 이 저장소의 `release` 브랜치 조건이 걸려 있다. 배포 브랜치를 바꾸면 `scripts/gcp-setup.sh`의 조건도 고치고 `make gcp-setup`을 다시 실행한다. 저장소를 옮기거나 이름을 바꾸면 GitHub이 토큰에 새 이름을 넣으므로 배포가 `rejected by the attribute condition`으로 실패한다. `scripts/gcp-env.sh`의 `GITHUB_REPO`를 고치고 공급자 조건과 배포 서비스 계정의 `workloadIdentityUser` 바인딩을 새 이름으로 바꾼다.
 
-- 밴드 세션이 만료되면 Job이 실패하고 알림 메일이 온다. `make band-renew`(`make band-login` 뒤에 `make band-secret`)를 실행한다. Job은 비밀의 최신 버전을 읽으므로 다시 배포하지 않아도 된다.
+- 밴드 세션은 로그인 후 48시간에 끝나고, 쓰는 동안에도 다시 발급되지 않는다(2026-11-10 `batch probe`로 확인). 배치가 끝날 때 만료가 24시간 안으로 다가왔거나 만료로 실패했으면 텔레그램으로 알린다. 텔레그램에서 `/renew`를 보내고 답으로 온 링크를 폰에서 열어 로그인하면 bandlogin이 `band-state`에 새 버전을 올리고 이전 버전을 끈다. 이 컴퓨터에서는 전처럼 `make band-renew`(`make band-login` 뒤에 `make band-secret`)를 실행해도 된다. Job은 비밀의 최신 버전을 읽으므로 다시 배포하지 않아도 된다.
 - `batch probe`는 밴드가 토큰을 만료 전에 다시 발급하는지 보는 시험 명령이다. 세션의 복사본으로 만료 18시간 전부터 만료 5분 뒤까지 밴드 홈을 몇 번 열고 `band_session`과 `rt`의 만료 시각만 로그에 남긴다. 운영 비밀에는 쓰지 않는다. 그 세션을 쓰는 마지막 정기 실행 뒤에 시작한다.
 - Claude API 키를 바꾸려면 `gcloud secrets versions add claude-api-key --data-file=-`로 새 버전을 올린다.
 - 웹 서버는 `robots.txt`와 `X-Robots-Tag: noindex`로 검색엔진 수집을 막는다.

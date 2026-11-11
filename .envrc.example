@@ -34,3 +34,8 @@ export CLAUDE_API_KEY=""
 # export KAKAO_ROOM="ABC(아카라카북클럽)"
 # 대화방 주간 요약을 올릴 밴드 게시판 이름. #은 빼고 쓴다.
 # export BAND_BOARD="자유게시판"
+
+# 텔레그램 봇(밴드 다시 로그인과 세션 만료 알림). 운영에서는 Secret Manager에서 받는다.
+# 로컬 배치에서 만료 알림을 받으려면 둘 다 둔다. make gcp-setup은 TELEGRAM_BOT_TOKEN을 telegram-bot-token 비밀의 첫 버전으로 올린다.
+# export TELEGRAM_BOT_TOKEN=
+# export TELEGRAM_CHAT_ID=

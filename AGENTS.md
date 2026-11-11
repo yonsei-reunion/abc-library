@@ -16,7 +16,7 @@
 
 ## 구조
 
-- 진입점은 `cmd/web`(웹 서버)와 `cmd/batch`(일일 배치)이고, 나머지 코드는 `internal/` 아래에 둔다.
+- 진입점은 `cmd/web`(웹 서버), `cmd/batch`(일일 배치), `cmd/bandlogin`(밴드 다시 로그인)이고, 나머지 코드는 `internal/` 아래에 둔다.
 - `internal/book`(도메인)은 밴드, Claude, DB, HTTP 패키지에 의존하지 않는다. 의존 방향은 바깥 계층에서 도메인 쪽이다.
 - 설정 속성은 환경 변수로 받는다. 로컬에서는 `.envrc`(커밋하지 않음)에 두고, 속성 목록은 `.envrc.example`에 적는다.
 - DB 연결은 `DB_URL`(비밀번호를 뺀 URL)과 `DB_PWD`를 조합한다.
@@ -35,7 +35,8 @@
 
 ## 밴드 수집
 
-- 로그인은 사람이 직접 하고, 코드는 저장된 Playwright `storageState`만 쓴다. 비밀번호를 코드, 설정, 로그에 두지 않는다.
+- 로그인 화면은 사람이 직접 조작하고, 코드는 저장된 Playwright `storageState`만 쓴다. 비밀번호를 코드, 설정, 로그에 두지 않는다.
+- 세션은 로그인 후 48시간에 끝나고 쓰는 동안 다시 발급되지 않는다. 다시 로그인은 이 컴퓨터의 `make band-renew`나 폰의 텔레그램 `/renew`(`cmd/bandlogin`)로 한다. bandlogin은 로그인 화면을 폰에 비추고 받은 입력을 전달할 뿐이고, 자격 증명을 입력하거나 저장하지 않는다. 입력 내용, 화면 이미지, 링크 토큰을 로그와 메시지에 남기지 않는다.
 - 세션 파일과 쿠키 값은 커밋하지 않고 로그나 출력에도 남기지 않는다.
 - 웹 클라이언트가 그린 화면을 읽기만 한다. 밴드 내부 API 요청을 HTTP로 직접 재현하거나 앱을 역분석하지 않는다.
 - 수집은 읽기만 한다. 접힌 이전 댓글을 펼치거나 게시글 목록을 '최신 댓글순'으로 바꾸는 것처럼 읽기 위한 동작만 한다(정렬은 계정 설정에 저장되지 않는다). 수집은 하루 한 번으로 제한한다.
@@ -106,9 +107,9 @@
 ## 배포
 
 - Google Cloud 프로젝트 이름, 리전, 서비스 계정, 비밀 이름은 `scripts/gcp-env.sh`에만 둔다. 절차는 `docs/spec.md`의 '배포'를 따른다.
-- 운영 배포는 `release` 브랜치에 merge할 때만 한다. 배포는 `make release`(`scripts/release.sh`)로 하고, 이 명령이 마이그레이션이 바뀌었으면 운영 DB에 먼저 적용한다. GitHub Actions(`.github/workflows/ci.yml`)가 `release`에 push되면 `make ci`를 통과한 뒤 웹과 배치를 배포한다. `main`에 push하면 검사만 한다.
-- 웹과 배치는 배포된 이미지의 커밋 이후 각자에 들어가는 파일이 바뀌었을 때만 배포한다(`scripts/deploy.sh --if-changed`). 무엇이 들어가는지는 `go list -deps`로 계산하므로 목록을 따로 두지 않는다.
-- 배치 이미지에는 전체 Chromium 없이 headless shell만 넣는다. 배치에서 브라우저 설치를 확인할 때는 `band.InstallHeadlessBrowser`를 쓴다.
+- 운영 배포는 `release` 브랜치에 merge할 때만 한다. 배포는 `make release`(`scripts/release.sh`)로 하고, 이 명령이 마이그레이션이 바뀌었으면 운영 DB에 먼저 적용한다. GitHub Actions(`.github/workflows/ci.yml`)가 `release`에 push되면 `make ci`를 통과한 뒤 웹, 배치, bandlogin을 배포한다. bandlogin은 공개 접근을 설정해야 해서 처음 한 번은 `make deploy-bandlogin`으로 직접 배포한다. `main`에 push하면 검사만 한다.
+- 웹, 배치, bandlogin은 배포된 이미지의 커밋 이후 각자에 들어가는 파일이 바뀌었을 때만 배포한다(`scripts/deploy.sh --if-changed`). 무엇이 들어가는지는 `go list -deps`로 계산하므로 목록을 따로 두지 않는다.
+- 배치와 bandlogin 이미지에는 전체 Chromium 없이 headless shell만 넣는다. 배치에서 브라우저 설치를 확인할 때는 `band.InstallHeadlessBrowser`를 쓴다.
 
 ## 테스트
 

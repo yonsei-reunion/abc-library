@@ -1,8 +1,9 @@
 name: CI
 
 # push마다 make ci(린트와 단위 테스트)를 실행한다.
-# release에 merge(push)하면 테스트가 통과한 뒤 웹 서버와 배치 이미지를 빌드해서 Cloud Run에 배포한다.
-# 웹과 배치는 배포된 커밋 이후 각자에 들어가는 파일이 바뀌었을 때만 배포한다. 직접 실행(workflow_dispatch)하면 둘 다 배포한다.
+# release에 merge(push)하면 테스트가 통과한 뒤 웹 서버, 배치, bandlogin 이미지를 빌드해서 Cloud Run에 배포한다.
+# bandlogin은 scripts/gcp-env.sh의 TELEGRAM_CHAT_ID가 비어 있으면 배포하지 않는다.
+# 웹과 배치는 배포된 커밋 이후 각자에 들어가는 파일이 바뀌었을 때만 배포한다. 직접 실행(workflow_dispatch)하면 모두 배포한다.
 # main에 push하면 검사만 하고 배포하지 않는다.
 # 문서(.md 파일과 docs/)만 바뀌었으면 검사도 배포도 하지 않는다.
 on:
@@ -48,7 +49,7 @@ jobs:
       cancel-in-progress: false
     strategy:
       matrix:
-        target: [web, batch]
+        target: [web, batch, bandlogin]
     permissions:
       contents: read
       id-token: write # Workload Identity Federation으로 OIDC 토큰을 받는 데 필요하다.

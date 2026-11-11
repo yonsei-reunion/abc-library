@@ -1,6 +1,6 @@
 # 밴드 재로그인 계획 B: 텔레그램 `/renew`와 폰에서 하는 로그인
 
-작성일 2026-11-06. '만료 직전 재발급 시험' 결과를 보고 할지 정한다. 11/8에 하려던 시험은 놓쳐서 11/10~11/11에 Cloud Run에서 한다.
+작성일 2026-11-06. 2026-11-12에 시험 결과(재발급 없음)를 보고 이 계획으로 정했고, 코드와 배포 설정을 만들었다. 남은 일은 아래 '진행 상태'에 있다.
 
 ## 배경
 
@@ -16,6 +16,27 @@
 | --- | --- |
 | `exp`가 늘었다 | 이 계획을 하지 않는다. 배치가 끝날 때 세션을 Secret Manager에 다시 저장하게 고친다. |
 | 늘지 않았다 | 이 계획을 진행한다. PC가 꺼져 있는 일이 잦지 않다면 가상 화면과 noVNC로 PC를 쓰는 계획 A가 더 쉽다. |
+
+결과: **늘지 않았다.** 실행 `abc-batch-bjr4b`가 11/10 07:34부터 11/11 01:39까지 9번 열었고, 만료 2분 전(01:31)까지 `band_session`과 `rt`의 `exp`가 11/11 01:34:26 그대로였다. 만료 5분 뒤에는 소개 페이지로 옮겨 갔다. 그 세션을 쓴 11/11, 11/12 03:00 배치는 `ErrSessionExpired`로 실패했다. PC를 늘 켜 둘 수 없어서 계획 A 대신 이 계획으로 간다.
+
+## 진행 상태
+
+| 단계 | 상태 |
+| --- | --- |
+| 1. 가능성 확인 | 일부. 이 PC(한국 IP)의 headless shell에서 로그인 화면과 휴대폰 번호 화면이 정상으로 뜨고, 화면 중계로 누르기와 글자 입력이 된다. 서울 Cloud Run IP에서 문자 인증까지 되는지는 첫 배포 뒤 실제로 로그인해 봐야 안다 |
+| 2. 화면 중계 | 완료. `band.LoginScreen`(`internal/band/screen.go`), `internal/bandlogin`, `cmd/bandlogin`. `make bandlogin-local`로 이 PC에서 시험한다 |
+| 3. 세션 올리기 | 완료. `internal/secretmanager`(REST, 메타데이터 서버 토큰) |
+| 4. 텔레그램 | 코드 완료(`internal/telegram`, `cmd/batch/alert.go`). 봇 만들기와 웹훅 등록이 남았다 |
+| 5. 배포 | 스크립트 완료(`Dockerfile.bandlogin`, `scripts/deploy.sh bandlogin`, `scripts/telegram-webhook.sh`, CI). 실제 배포가 남았다 |
+
+운영자가 할 일(순서대로):
+
+1. 텔레그램 BotFather에서 봇을 만들고 토큰을 받는다. 봇에게 아무 글이나 보낸 뒤 `https://api.telegram.org/bot<토큰>/getUpdates`의 `message.chat.id`로 대화방 번호를 알아낸다(웹훅을 등록하기 전에만 된다).
+2. `scripts/gcp-env.sh`의 `TELEGRAM_CHAT_ID`에 번호를 넣는다.
+3. `.envrc`를 읽은 셸에서 `TELEGRAM_BOT_TOKEN=<토큰> make gcp-setup`(서비스 계정, 비밀, 권한).
+4. `make deploy-bandlogin`(처음 배포라서 공개 접근을 설정한다), `make telegram-webhook`, `make deploy-batch`(배치에 만료 알림 연결).
+5. 텔레그램에서 `/renew`를 보내 폰으로 로그인해 본다. 문자 인증이 막히면 위험 표의 대응을 보고, 그래도 안 되면 계획 A로 간다.
+6. 다 되면 바꾼 `scripts/gcp-env.sh`를 커밋한다. 일회성 스케줄러 `abc-batch-probe`가 남아 있으면 지운다(`gcloud scheduler jobs delete abc-batch-probe --location asia-northeast3`).
 
 ## 목표와 범위
 
@@ -37,26 +58,29 @@ abc-band-login ─ 새 버전 ─> Secret Manager band-state (배치 Job이 late
 ### 서비스
 
 - 이미지는 `Dockerfile.batch`처럼 Chromium headless shell만 넣는다(`band.InstallHeadlessBrowser`).
-- Cloud Run 설정: 최소 인스턴스 0, 최대 1, 동시성 1, 요청 제한 시간 15분, CPU를 요청이 없어도 쓰는 설정(`--no-cpu-throttling`), 메모리 2GiB. 로그인을 하는 몇 분 동안만 켜지고 평소 비용은 거의 없다.
+- Cloud Run 설정: 최소 인스턴스 0, 최대 1, 동시성 10(화면 스트림이 연결 하나를 계속 쓰므로 1이면 입력이 막힌다), 요청 제한 시간 15분, CPU를 요청이 없어도 쓰는 설정(`--no-cpu-throttling`), 메모리 2GiB. 로그인을 하는 몇 분 동안만 켜지고 평소 비용은 거의 없다.
 - 서비스 계정 `abc-band-login`을 새로 만든다. 권한은 `band-state` 비밀에 `secretVersionAdder`와 `secretVersionManager`, 텔레그램 비밀 두 개(`telegram-bot-token`, `telegram-webhook-secret`)에 `secretAccessor`뿐이다.
 
 ### 경로
 
 | 경로 | 하는 일 |
 | --- | --- |
-| `POST /telegram/{webhook-secret}` | 텔레그램 웹훅. `X-Telegram-Bot-Api-Secret-Token`과 허용한 chat id(`TELEGRAM_CHAT_ID`)를 확인하고 `/renew`면 로그인 세션을 만들어 링크를 답한다 |
-| `GET /login/{token}` | 폰에서 여는 화면. 캔버스(또는 img)와 숨은 입력창을 그린다 |
-| `GET /login/{token}/frames` | 브라우저 화면을 JPEG 프레임으로 보내는 SSE |
-| `POST /login/{token}/input` | 터치 좌표, 문자 입력, 키(Backspace, Enter, Tab)를 브라우저에 전달 |
+| `POST /telegram` | 텔레그램 웹훅. `X-Telegram-Bot-Api-Secret-Token`과 허용한 chat id(`TELEGRAM_CHAT_ID`)를 확인하고 `/renew`면 로그인 세션을 만들어 링크를 답한다 |
+| `GET /login` | 폰에서 여는 화면. img와 숨은 입력창, 지우기·Tab·Enter 단추를 그린다. 링크는 `/login#{token}`이다 |
+| `POST /login/claim` | 화면의 스크립트가 `#` 뒤의 토큰을 보내면 이 기기를 쿠키(`bl_device`)로 묶는다 |
+| `GET /login/frames` | 브라우저 화면을 JPEG 프레임으로 보내는 SSE. 끝나면 `done` 이벤트로 결과를 보낸다 |
+| `POST /login/input` | 누른 자리(화면 비율), 문자 입력, 키(Backspace, Enter, Tab)를 브라우저에 전달 |
 | `GET /health` | 상태 확인(`/healthz`는 Google Frontend가 가로채므로 쓰지 않는다) |
 
 화면 중계는 표준 라이브러리만 쓴다(SSE와 POST). 웹소켓 모듈을 들이지 않는다.
 
+처음 계획은 웹훅 비밀과 링크 토큰을 경로에 넣었지만 Cloud Run 요청 로그에 경로가 남는다. 그래서 웹훅은 비밀 토큰 헤더로만 확인하고, 링크 토큰은 서버로 가지 않는 `#` 뒤에 둔다. 토큰을 받은 뒤의 요청은 기기 쿠키로만 확인한다.
+
 ### 브라우저와 화면 중계
 
-- 폰 크기(예: 390x844, `HasTouch`, 한국어와 `Asia/Seoul`)의 컨텍스트를 새로 만들고 `https://band.us/home`을 연다.
+- 폰 크기(390x844, 한국어와 `Asia/Seoul`)의 컨텍스트를 새로 만들고 로그인 수단을 고르는 화면(`auth.band.us/login_page`)을 연다. 사용자 에이전트는 `HeadlessChrome`을 뺀 데스크톱 Chrome 문자열이다. 모바일 에이전트로 바꾸면 배치(데스크톱)와 다른 기기로 보일 수 있어서 그대로 둔다.
 - 프레임은 CDP `Page.startScreencast`(playwright-go의 `NewCDPSession`)로 받는다. 쓸 수 없으면 `page.Screenshot`을 0.5초 간격으로 찍는 방식으로 바꾼다.
-- 입력은 `page.Mouse().Click`(좌표를 뷰포트 비율로 환산), 문자는 `page.Keyboard().InsertText`, 특수 키는 `Keyboard().Press`로 보낸다. 폰의 화상 키보드는 숨은 `<input>`에 포커스를 줘서 띄운다.
+- 입력은 `page.Mouse().Click`(좌표를 뷰포트 비율로 환산), 문자는 `page.Keyboard().InsertText`, 특수 키는 `Keyboard().Press`로 보낸다. 폰의 화상 키보드는 숨은 `<input>`에 포커스를 줘서 띄운다. 화상 키보드의 지우기가 이벤트를 주지 않는 경우를 대비해 화면 아래에 지우기, Tab, Enter 단추를 둔다.
 - 로그인 감지는 지금의 `band.loggedIn`을 그대로 쓴다. 감지되면 `StorageState`를 메모리나 임시 파일(`0600`)로 받아서 올리고 파일을 지운다.
 
 ### 로그인 세션 관리
@@ -71,11 +95,12 @@ abc-band-login ─ 새 버전 ─> Secret Manager band-state (배치 Job이 late
 - 세션 파일과 쿠키 값은 로그와 출력에 남기지 않는다. 완료 알림에는 `band.SessionLifetimes`의 만료 시각만 담는다.
 - 이 링크는 밴드 계정을 원격으로 조작하는 창구다. 막는 장치는 다음과 같다.
   - 텔레그램 웹훅은 비밀 경로와 비밀 토큰 헤더, 허용 chat id를 모두 맞아야 한다.
-  - 링크 토큰은 무작위 32바이트, 10분, 1회, 기기 고정이다.
-  - 링크는 텔레그램 메시지로만 전달하고 로그에 쓰지 않는다. 틀린 토큰에는 응답을 똑같이 404로 주고 시도 횟수를 제한한다.
+  - 링크 토큰은 무작위 32바이트, 10분, 1회, 기기 고정이다. 같은 기기의 새로 고침은 쿠키로 다시 들어온다.
+  - 링크는 텔레그램 메시지로만 전달하고 로그에 쓰지 않는다. 틀린 토큰이나 쿠키에는 응답을 똑같이 404로 주고, 1분에 20번이 넘으면 그 1분 동안은 맞는 값도 받지 않는다.
+  - 다른 사이트에서 온 POST는 `http.CrossOriginProtection`으로 막는다.
   - 서비스 계정 권한은 위의 비밀들로만 좁힌다.
-- 운영자 본인의 계정 로그인이고 사이트 이용자의 개인정보를 새로 받지 않는다. 그래도 텔레그램이라는 외부 서비스가 더해지므로 구현할 때 `privacy.html`(외부 서비스 항목)에 영향이 있는지 확인한다.
-- `AGENTS.md`의 '로그인은 사람이 직접 하고…'는 '로그인 화면은 사람이 직접 조작하고, 코드는 그 화면을 비출 뿐 자격 증명을 입력하거나 저장하지 않는다'로 고친다.
+- 운영자 본인의 계정 로그인이고 사이트 이용자의 개인정보를 새로 받지 않는다. 텔레그램에는 운영자에게 보내는 링크와 결과 알림만 가고 밴드 글이나 회원 정보는 가지 않으므로 `privacy.html`은 바꾸지 않았다.
+- `AGENTS.md`의 '밴드 수집' 규칙을 '로그인 화면은 사람이 직접 조작하고, 코드는 그 화면을 비출 뿐 자격 증명을 입력하거나 저장하지 않는다'는 뜻으로 고쳤다.
 
 ## 위험과 확인할 것
 
@@ -86,7 +111,7 @@ abc-band-login ─ 새 버전 ─> Secret Manager band-state (배치 Job이 late
 | 프레임이 느려서 폰에서 쓰기 어렵다 | 해상도와 JPEG 품질을 낮추고 0.3~0.5초 간격으로 제한한다 |
 | 로그인 중 인스턴스가 내려가거나 재시작된다 | 토큰과 브라우저가 메모리에만 있으므로 `/renew`를 다시 보내면 된다. 최대 인스턴스는 1이다 |
 | 로그인한 세션이 밴드가 새 위치(서울 Cloud Run IP)로 보고 배치와 충돌한다 | 배치도 같은 서울 리전에서 돈다. 로그인 서비스와 배치의 IP 대역이 다르면 첫 배치 결과를 확인한다 |
-| 텔레그램 웹훅을 위조해서 링크를 받아 간다 | 비밀 경로, 비밀 토큰 헤더, chat id 확인 세 가지를 모두 요구한다 |
+| 텔레그램 웹훅을 위조해서 링크를 받아 간다 | 비밀 토큰 헤더와 chat id를 모두 맞아야 하고, 링크는 허용한 대화방으로만 간다 |
 
 ## 구현 단계
 
@@ -118,3 +143,4 @@ abc-band-login ─ 새 버전 ─> Secret Manager band-state (배치 Job이 late
 - 텔레그램 봇은 새로 만든다(이미 있는지 미확인). 허용할 chat id는 `/start`로 알아낸다.
 - 링크를 여는 폰이 텔레그램 안 브라우저일 때 문자 입력과 키보드가 잘 되는지.
 - 완료 뒤 곧바로 배치를 한 번 돌릴지(`gcloud run jobs execute`는 서비스 계정에 권한이 더 필요하다). 일단은 다음 정기 실행을 기다린다.
+- 텔레그램 안 브라우저에서 한글 입력은 시험하지 않았다. 휴대폰 로그인은 숫자만 넣으므로 문제가 되면 외부 브라우저로 연다.

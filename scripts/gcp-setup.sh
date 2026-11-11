@@ -55,6 +55,7 @@ create_sa "$WEB_SA" "abc-library 웹 서버"
 create_sa "$BATCH_SA" "abc-library 일일 배치"
 create_sa "$SCHEDULER_SA" "abc-library 배치 실행 스케줄러"
 create_sa "$DEPLOY_SA" "abc-library GitHub Actions 배포"
+create_sa "$LOGIN_SA" "abc-library 밴드 다시 로그인"
 
 echo "== Secret Manager =="
 create_secret() {
@@ -111,6 +112,22 @@ if [[ -n "$GOOGLE_CLIENT_ID" ]]; then
   fi
 fi
 
+# bandlogin의 텔레그램 비밀. 봇 토큰은 TELEGRAM_BOT_TOKEN 환경 변수가 있으면 올리고, 웹훅 비밀 토큰은 임의의 값으로 만든다.
+create_secret "$TELEGRAM_TOKEN_SECRET"
+if ! has_version "$TELEGRAM_TOKEN_SECRET"; then
+  if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+    secret_from_env "$TELEGRAM_TOKEN_SECRET" TELEGRAM_BOT_TOKEN
+  else
+    echo "  $TELEGRAM_TOKEN_SECRET: 버전이 없습니다. TELEGRAM_BOT_TOKEN을 환경 변수로 두고 다시 실행하세요"
+  fi
+fi
+create_secret "$TELEGRAM_WEBHOOK_SECRET_NAME"
+if ! has_version "$TELEGRAM_WEBHOOK_SECRET_NAME"; then
+  # 텔레그램은 비밀 토큰에 영문자, 숫자, _와 -만 받는다. 바꾸면 make telegram-webhook으로 다시 등록한다.
+  openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add "$TELEGRAM_WEBHOOK_SECRET_NAME" --project "$PROJECT" --data-file=- >/dev/null
+  echo "  $TELEGRAM_WEBHOOK_SECRET_NAME: 임의의 값으로 첫 버전을 올렸습니다"
+fi
+
 grant_secret() {
   gcloud secrets add-iam-policy-binding "$1" --project "$PROJECT" \
     --member "serviceAccount:$2" --role roles/secretmanager.secretAccessor --condition None >/dev/null
@@ -122,6 +139,16 @@ grant_secret "$BAND_STATE_SECRET" "$BATCH_SA"
 grant_secret "$CLAUDE_KEY_SECRET" "$BATCH_SA"
 for secret in "$KAKAO_SHEET_URL_SECRET" "$KAKAO_SHEET_TOKEN_SECRET"; do
   grant_secret "$secret" "$BATCH_SA"
+done
+# bandlogin은 텔레그램 비밀을 읽고, band-state에는 새 버전을 올리고 이전 버전을 끈다. band-state의 값은 읽지 않는다.
+grant_secret "$TELEGRAM_TOKEN_SECRET" "$LOGIN_SA"
+grant_secret "$TELEGRAM_WEBHOOK_SECRET_NAME" "$LOGIN_SA"
+# 배치는 세션 만료 알림을 같은 봇으로 보낸다.
+grant_secret "$TELEGRAM_TOKEN_SECRET" "$BATCH_SA"
+for role in roles/secretmanager.secretVersionAdder roles/secretmanager.secretVersionManager; do
+  gcloud secrets add-iam-policy-binding "$BAND_STATE_SECRET" --project "$PROJECT" \
+    --member "serviceAccount:$LOGIN_SA" --role "$role" --condition None >/dev/null
+  echo "  $BAND_STATE_SECRET → $LOGIN_SA ($role)"
 done
 if [[ -n "$GOOGLE_CLIENT_ID" ]]; then
   grant_secret "$GOOGLE_SECRET" "$WEB_SA"
@@ -165,7 +192,7 @@ for region in "$WEB_REGION" "$BATCH_REGION"; do
   echo "  roles/artifactregistry.writer ($region/$REPO)"
 done
 # 배포할 때 서비스와 Job의 실행 서비스 계정을 지정할 수 있어야 한다.
-for sa in "$WEB_SA" "$BATCH_SA"; do
+for sa in "$WEB_SA" "$BATCH_SA" "$LOGIN_SA"; do
   gcloud iam service-accounts add-iam-policy-binding "$sa" --project "$PROJECT" \
     --member "serviceAccount:$DEPLOY_SA" --role roles/iam.serviceAccountUser >/dev/null
   echo "  roles/iam.serviceAccountUser ($sa)"
