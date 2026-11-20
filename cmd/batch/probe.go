@@ -65,7 +65,7 @@ func (p sessionProbe) run() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	exp := prev["band_session"]
+	exp := prev[band.SessionCookie]
 	if exp.IsZero() {
 		return false, errors.New("세션 파일에 band_session 토큰의 만료 시각이 없습니다")
 	}
@@ -131,6 +131,7 @@ func probePlan(exp, now time.Time) []time.Time {
 	return plan
 }
 
+// tokenExps는 쿠키 이름마다 JWT가 끝나는 시각이다. 도메인만 다른 같은 이름의 쿠키가 여럿이면 가장 늦은 것을 쓴다.
 func tokenExps(path string) (map[string]time.Time, error) {
 	lifetimes, err := band.SessionLifetimes(path)
 	if err != nil {
@@ -138,7 +139,7 @@ func tokenExps(path string) (map[string]time.Time, error) {
 	}
 	out := map[string]time.Time{}
 	for _, l := range lifetimes {
-		if !l.TokenExp.IsZero() {
+		if l.TokenExp.After(out[l.Name]) {
 			out[l.Name] = l.TokenExp
 		}
 	}

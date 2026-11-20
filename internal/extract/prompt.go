@@ -68,8 +68,6 @@ func systemPrompt(tags book.TagList) string {
 - 모임 주제 태그(` + strings.Join(tags.Topics(), ", ") + `)는 책의 내용이 그 주제와 직접 관련되거나, 글이 그 주제의 모임 도서로 다룬 경우에 붙인다.`
 }
 
-const searchToolDescription = `교보문고 통합 검색으로 책의 판본을 찾는다. 검색 결과의 판본마다 isbn13, title, authors(저자만), publisher, pub_date, category(국내도서, 외국도서 등)를 돌려준다. 최대 8개까지 돌려준다.`
-
 func resultSchema(tags book.TagList) map[string]any {
 	str := map[string]any{"type": "string"}
 	ints := map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}

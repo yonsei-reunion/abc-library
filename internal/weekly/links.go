@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/yonsei-alumni/abc-library/internal/extract"
+	"github.com/yonsei-alumni/abc-library/internal/book"
 	"github.com/yonsei-alumni/abc-library/internal/kakao"
 )
 
@@ -142,7 +142,7 @@ func fetchTitles(ctx context.Context, f TitleFetcher, urls []string) []Link {
 	var targets []int
 	for i, u := range urls {
 		links[i].URL = u
-		if p, err := url.Parse(u); err == nil && !extract.IsStoreLink(p) && len(targets) < maxTitleFetches {
+		if p, err := url.Parse(u); err == nil && !book.IsStoreLink(p) && len(targets) < maxTitleFetches {
 			targets = append(targets, i)
 		}
 	}

@@ -235,3 +235,15 @@ func SearchURL(query string) string {
 func CoverURL(barcode string, width int) string {
 	return fmt.Sprintf("https://contents.kyobobook.co.kr/sih/fit-in/%dx0/pdt/%s.jpg", width, url.PathEscape(barcode))
 }
+
+// ApplyTo는 b의 제목, 저자, 출판사, ISBN, 상품 번호를 이 판본의 것으로 바꾼다. 판본에 저자가 없으면 b의 저자를 그대로 둔다.
+// 잡지나 전자책처럼 바코드가 ISBN과 다른 상품이면 표지에 쓸 바코드도 넣는다.
+func (ed Edition) ApplyTo(b *book.Book) {
+	b.ISBN13, b.Title, b.Publisher, b.KyoboPID = ed.ISBN13, ed.Title, ed.Publisher, ed.PID
+	if ed.Barcode != ed.ISBN13 {
+		b.KyoboBarcode = ed.Barcode
+	}
+	if len(ed.Authors) > 0 {
+		b.Authors = ed.Authors
+	}
+}

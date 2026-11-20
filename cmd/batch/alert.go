@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/yonsei-alumni/abc-library/internal/band"
+	"github.com/yonsei-alumni/abc-library/internal/book"
 	"github.com/yonsei-alumni/abc-library/internal/pipeline"
 	"github.com/yonsei-alumni/abc-library/internal/telegram"
 )
@@ -25,11 +26,7 @@ func alertSession(ctx context.Context, log *slog.Logger, cmd string, runErr erro
 	}
 	var exp time.Time
 	if ls, err := band.SessionLifetimes(statePath()); err == nil {
-		for _, l := range ls {
-			if l.Name == "band_session" {
-				exp = l.TokenExp
-			}
-		}
+		exp = band.SessionTokenExp(ls)
 	}
 	if msg := sessionNotice(cmd, exp, time.Now(), runErr); msg != "" {
 		sendTelegram(ctx, log, msg)
@@ -97,7 +94,5 @@ func sessionNotice(cmd string, exp, now time.Time, runErr error) string {
 	if !exp.After(now) {
 		return "밴드 세션이 만료되었습니다. /renew를 보내 다시 로그인하세요."
 	}
-	return "밴드 세션이 " + exp.In(kstZone).Format("01-02 15:04") + "에 만료됩니다. 다음 배치 전에 /renew를 보내 다시 로그인하세요."
+	return "밴드 세션이 " + exp.In(book.Seoul).Format("01-02 15:04") + "에 만료됩니다. 다음 배치 전에 /renew를 보내 다시 로그인하세요."
 }
-
-var kstZone = time.FixedZone("KST", 9*60*60)

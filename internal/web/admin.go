@@ -554,7 +554,7 @@ func (s *Server) deleteMention(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.store.DeleteMention(r.Context(), m.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
+	if err := ignoreNotFound(s.store.DeleteMention(r.Context(), m.ID)); err != nil {
 		s.fail(w, r, err)
 		return
 	}

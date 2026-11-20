@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/yonsei-alumni/abc-library/internal/book"
+	"github.com/yonsei-alumni/abc-library/internal/claude"
 	"github.com/yonsei-alumni/abc-library/internal/kyobo"
 )
 
@@ -16,7 +17,7 @@ import (
 // 지어낸 개인 정보가 요약에 남지 않는지, 댓글에서 소개한 책을 찾는지 본다.
 // 실행: make test-integration
 func TestExtractWithClaude(t *testing.T) {
-	client, err := NewClient()
+	client, err := claude.NewClient()
 	if err != nil {
 		t.Skip(err)
 	}
@@ -89,7 +90,7 @@ func TestExtractWithClaude(t *testing.T) {
 
 // 여러 권으로 된 책은 언급마다 하나만 넣고(짚은 권 또는 세트), 그 책과 직접 관련 없는 링크는 빼는지 본다.
 func TestExtractSeriesAndUnrelatedLinksWithClaude(t *testing.T) {
-	client, err := NewClient()
+	client, err := claude.NewClient()
 	if err != nil {
 		t.Skip(err)
 	}
@@ -146,7 +147,7 @@ func TestExtractSeriesAndUnrelatedLinksWithClaude(t *testing.T) {
 // 대화방 주간 요약처럼 본문이 책 한 권과 책이 아닌 여러 이야기를 함께 담으면,
 // 책 이야기 밖에 있는 링크는 그 책에 붙지 않아야 한다.
 func TestExtractDigestDropsLinksOutsideBookWithClaude(t *testing.T) {
-	client, err := NewClient()
+	client, err := claude.NewClient()
 	if err != nil {
 		t.Skip(err)
 	}
@@ -184,7 +185,7 @@ func TestExtractDigestDropsLinksOutsideBookWithClaude(t *testing.T) {
 
 // 제목 없는 독서 기록 링크만 있어도 주소에 든 책 제목으로 책을 찾는지 본다.
 func TestExtractBooksFromReadingLogLinksWithClaude(t *testing.T) {
-	client, err := NewClient()
+	client, err := claude.NewClient()
 	if err != nil {
 		t.Skip(err)
 	}
@@ -217,7 +218,7 @@ func TestExtractBooksFromReadingLogLinksWithClaude(t *testing.T) {
 
 // 《 》나 『 』로 감싼 제목은 지나가듯 언급해도 책으로 넣는지 본다.
 func TestExtractBracketedTitlesWithClaude(t *testing.T) {
-	client, err := NewClient()
+	client, err := claude.NewClient()
 	if err != nil {
 		t.Skip(err)
 	}

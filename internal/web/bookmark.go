@@ -123,7 +123,7 @@ func (s *Server) deleteBookmark(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	if err := s.store.DeleteBookmark(r.Context(), userID(r), id); err != nil && !errors.Is(err, store.ErrNotFound) {
+	if err := ignoreNotFound(s.store.DeleteBookmark(r.Context(), userID(r), id)); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -281,7 +281,7 @@ func (s *Server) deleteCategory(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	if err := s.store.DeleteCategory(r.Context(), userID(r), id); err != nil && !errors.Is(err, store.ErrNotFound) {
+	if err := ignoreNotFound(s.store.DeleteCategory(r.Context(), userID(r), id)); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -290,7 +290,7 @@ func (s *Server) deleteCategory(w http.ResponseWriter, r *http.Request) {
 
 // deleteAccount는 사용자와 그 북마크, 카테고리를 모두 지우고 로그아웃한다.
 func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeleteUser(r.Context(), userID(r)); err != nil && !errors.Is(err, store.ErrNotFound) {
+	if err := ignoreNotFound(s.store.DeleteUser(r.Context(), userID(r))); err != nil {
 		s.fail(w, r, err)
 		return
 	}

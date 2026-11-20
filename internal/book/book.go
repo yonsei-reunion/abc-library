@@ -153,6 +153,16 @@ func WorkKey(title string, authors []string) string {
 	return key
 }
 
+// SameWork는 한 글 안에서 두 책이 같은 책인지 알려 준다. 작품 키가 같으면 같은 책이지만,
+// 한쪽이 글쓴이가 상품 링크로 가리킨 판본(linked)이고 둘의 ISBN이 다르면 다른 책이다(예: 시간의 역사와 시간의 역사(결정판)).
+func SameWork(a Book, aLinked bool, b Book, bLinked bool) bool {
+	if WorkKey(a.Title, a.Authors) != WorkKey(b.Title, b.Authors) {
+		return false
+	}
+	separate := (aLinked || bLinked) && a.ISBN13 != "" && b.ISBN13 != "" && a.ISBN13 != b.ISBN13
+	return !separate
+}
+
 func normalize(s string, dropSubtitle bool) string {
 	s = bracketed.ReplaceAllString(s, "")
 	if dropSubtitle {

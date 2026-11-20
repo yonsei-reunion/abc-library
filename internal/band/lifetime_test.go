@@ -73,3 +73,22 @@ func TestSessionAlive(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionTokenExp(t *testing.T) {
+	early, late := time.Unix(1800000000, 0), time.Unix(1800003600, 0)
+	ls := []SessionLifetime{
+		{Name: SessionCookie, TokenExp: early},
+		{Name: "rt", TokenExp: late.Add(time.Hour)},
+		{Name: SessionCookie, TokenExp: late},
+		{Name: SessionCookie},
+	}
+	if got := SessionTokenExp(ls); !got.Equal(late) {
+		t.Errorf("도메인만 다른 쿠키 중 가장 늦은 만료를 골라야 한다: %v", got)
+	}
+	if got := SessionTokenExp(ls[1:2]); !got.IsZero() {
+		t.Errorf("band_session이 없으면 0이어야 한다: %v", got)
+	}
+	if got := SessionTokenExp(nil); !got.IsZero() {
+		t.Errorf("빈 목록은 0이어야 한다: %v", got)
+	}
+}

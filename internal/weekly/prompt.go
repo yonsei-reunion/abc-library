@@ -36,8 +36,6 @@ const systemPrompt = `너는 연세대 동문 독서 모임 '아카라카북클�
 - 대화에 없는 내용을 지어내지 않는다. '~로 보인다' 같은 추측을 쓰지 않는다.
 - 이모지와 마크다운 서식을 쓰지 않는다.`
 
-const searchToolDescription = `교보문고 통합 검색으로 책의 판본을 찾는다. 검색 결과의 판본마다 isbn13, title, authors(저자만), publisher, pub_date, category(국내도서, 외국도서 등)를 돌려준다. 최대 8개까지 돌려준다.`
-
 func resultSchema() map[string]any {
 	str := map[string]any{"type": "string"}
 	strs := map[string]any{"type": "array", "items": str}

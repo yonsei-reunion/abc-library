@@ -3,24 +3,21 @@
 package cloudrun
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
+
+	"github.com/yonsei-alumni/abc-library/internal/gcp"
 )
 
 // Job은 한 리전의 Cloud Run Job 하나다.
 type Job struct {
 	Project, Region, Name string
-	// Token은 접근 토큰을 준다. Cloud Run에서는 secretmanager.MetadataToken을 쓴다.
-	Token func(ctx context.Context) (string, error)
+	// Token은 접근 토큰을 준다. Cloud Run에서는 gcp.MetadataToken을 쓴다.
+	Token gcp.TokenFunc
 	// BaseURL은 API 주소다. 비우면 https://run.googleapis.com을 쓴다. 테스트에서 바꾼다.
 	BaseURL string
 	HTTP    *http.Client
@@ -61,7 +58,7 @@ func (j *Job) Executions(ctx context.Context, n int) ([]Execution, error) {
 	}
 	list := make([]Execution, 0, len(out.Executions))
 	for _, e := range out.Executions {
-		x := Execution{Name: lastPart(e.Name), Created: e.CreateTime, Completed: e.CompletionTime, Succeeded: e.SucceededCount > 0}
+		x := Execution{Name: gcp.LastSegment(e.Name), Created: e.CreateTime, Completed: e.CompletionTime, Succeeded: e.SucceededCount > 0}
 		if len(e.Template.Containers) > 0 {
 			x.Args = e.Template.Containers[0].Args
 		}
@@ -95,7 +92,7 @@ func (j *Job) Run(ctx context.Context, args []string, env map[string]string) (st
 	if err := j.call(ctx, http.MethodPost, j.path()+":run", body, &op); err != nil {
 		return "", fmt.Errorf("Job %s을 실행하지 못했습니다: %w", j.Name, err)
 	}
-	return lastPart(op.Metadata.Name), nil
+	return gcp.LastSegment(op.Metadata.Name), nil
 }
 
 func (j *Job) path() string {
@@ -106,51 +103,6 @@ func (j *Job) path() string {
 	return base + "/v2/projects/" + url.PathEscape(j.Project) + "/locations/" + url.PathEscape(j.Region) + "/jobs/" + url.PathEscape(j.Name)
 }
 
-func lastPart(name string) string {
-	return name[strings.LastIndex(name, "/")+1:]
-}
-
 func (j *Job) call(ctx context.Context, method, u string, in, out any) error {
-	if j.Token == nil {
-		return errors.New("접근 토큰을 줄 함수가 없습니다")
-	}
-	token, err := j.Token(ctx)
-	if err != nil {
-		return err
-	}
-	var body io.Reader
-	if in != nil {
-		b, err := json.Marshal(in)
-		if err != nil {
-			return err
-		}
-		body = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, u, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	hc := j.HTTP
-	if hc == nil {
-		hc = &http.Client{Timeout: 30 * time.Second}
-	}
-	resp, err := hc.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		var e struct {
-			Error struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&e)
-		return fmt.Errorf("HTTP %d %s", resp.StatusCode, e.Error.Message)
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return gcp.Call(ctx, j.HTTP, j.Token, method, u, in, out)
 }

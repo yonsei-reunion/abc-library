@@ -15,38 +15,18 @@ import (
 // 브라우저가 가진 세션으로 statePath를 덮어쓴다. 밴드가 토큰을 만료 전에 다시 발급하는지 시험할 때 쓴다.
 // 파일을 덮어쓰므로 운영 세션의 복사본을 넘긴다. 세션이 끝나서 로그인 화면이나 소개 페이지로 옮겨 가면 false다.
 func Visit(statePath string, wait time.Duration) (bool, error) {
-	pw, err := playwright.Run()
+	b, err := launch(launchOptions{headless: true, statePath: statePath})
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = pw.Stop() }()
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(true)})
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = browser.Close() }()
-	bctx, err := newContext(browser, statePath)
-	if err != nil {
-		return false, err
-	}
-	page, err := bctx.NewPage()
-	if err != nil {
-		return false, err
-	}
-	if _, err := page.Goto("https://band.us/home", playwright.PageGotoOptions{WaitUntil: playwright.WaitUntilStateDomcontentloaded}); err != nil {
+	defer func() { _ = b.close() }()
+	if _, err := b.page.Goto(homeURL, playwright.PageGotoOptions{WaitUntil: playwright.WaitUntilStateDomcontentloaded}); err != nil {
 		return false, err
 	}
 	// 기다릴 요소가 따로 없다. 브라우저는 별도 프로세스라서 그동안에도 화면의 스크립트가 돈다.
 	time.Sleep(wait)
-	alive := SessionAlive(page.URL())
-	tmp := statePath + ".tmp"
-	if _, err := bctx.StorageState(playwright.BrowserContextStorageStateOptions{Path: playwright.String(tmp)}); err != nil {
-		return false, err
-	}
-	if err := os.Chmod(tmp, 0o600); err != nil {
-		return false, err
-	}
-	return alive, os.Rename(tmp, statePath)
+	alive := SessionAlive(b.page.URL())
+	return alive, b.saveState(statePath)
 }
 
 // SessionAlive는 밴드 홈을 연 뒤의 주소로 세션이 살아 있는지 판단한다.
@@ -55,8 +35,11 @@ func SessionAlive(pageURL string) bool {
 	return !IsLoginURL(pageURL) && !strings.Contains(pageURL, "/about/")
 }
 
+// SessionCookie는 로그인했는지를 정하는 쿠키다. 이 쿠키의 JWT가 끝나면 다시 로그인해야 한다.
+const SessionCookie = "band_session"
+
 // sessionCookies는 로그인 상태를 정하는 쿠키 이름이다.
-var sessionCookies = []string{"band_session", "rt", "SESSION"}
+var sessionCookies = []string{SessionCookie, "rt", "SESSION"}
 
 // SessionLifetime은 세션 쿠키 하나의 만료 정보다. 쿠키 값은 담지 않는다.
 type SessionLifetime struct {
@@ -102,6 +85,17 @@ func StateLifetimes(data []byte) ([]SessionLifetime, error) {
 		}
 	}
 	return out, nil
+}
+
+// SessionTokenExp는 SessionCookie의 JWT가 끝나는 시각이다. 도메인만 다른 같은 이름의 쿠키가 여럿이면 가장 늦은 것이고, 없으면 0이다.
+func SessionTokenExp(ls []SessionLifetime) time.Time {
+	var exp time.Time
+	for _, l := range ls {
+		if l.Name == SessionCookie && l.TokenExp.After(exp) {
+			exp = l.TokenExp
+		}
+	}
+	return exp
 }
 
 func jwtExp(token string) time.Time {

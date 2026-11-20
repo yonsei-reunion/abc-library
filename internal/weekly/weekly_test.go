@@ -171,6 +171,37 @@ func TestSummarize(t *testing.T) {
 	}
 }
 
+// breathSearch는 상품 링크의 숨과 ISBN이 다른 숨의 다른 판본을 검색 결과로 돌려준다.
+type breathSearch struct{ fakeSearch }
+
+var otherBreath = kyobo.Edition{PID: "S000000666666", Barcode: "9791191114999", ISBN13: "9791191114999", Title: "숨", Authors: []string{"테드 창"}}
+
+func (b *breathSearch) Search(context.Context, string) ([]kyobo.Edition, error) {
+	return []kyobo.Edition{otherBreath}, nil
+}
+
+func TestSummarizeKeepsLinkedEditionApart(t *testing.T) {
+	api := &fakeAPI{responses: []string{
+		message("tool_use", toolUse),
+		message("end_turn", textBlock(m{
+			"books": []m{
+				{"title": "숨", "authors": []string{}, "isbn13": "", "kyobo_pid": "S000000555555", "context": []string{}, "links": []int{}},
+				{"title": "숨", "authors": []string{"테드 창"}, "isbn13": otherBreath.ISBN13, "kyobo_pid": "", "context": []string{}, "links": []int{}},
+				{"title": "숨", "authors": []string{"테드 창"}, "isbn13": "", "kyobo_pid": "", "context": []string{}, "links": []int{}},
+			},
+			"links": []m{}, "keywords": []string{},
+		})),
+	}}
+	sum, err := New(api, &breathSearch{}, nil, nil, "").Summarize(context.Background(), week())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 상품 링크로 가리킨 판본은 작품 키가 같아도 ISBN이 다른 판본과 묶지 않는다. ISBN이 없는 같은 작품은 묶는다.
+	if len(sum.Books) != 2 || sum.Books[0].Purchase != kyobo.ProductURL(breathEdition.PID) || sum.Books[1].Purchase != kyobo.ProductURL(otherBreath.PID) {
+		t.Errorf("books = %+v", sum.Books)
+	}
+}
+
 func TestSummarizeKeepsUnassignedLinks(t *testing.T) {
 	api := &fakeAPI{responses: []string{message("end_turn", textBlock(m{"books": []m{}, "links": []m{}, "keywords": []string{}}))}}
 	sum, err := New(api, &fakeSearch{}, nil, nil, "").Summarize(context.Background(), week())

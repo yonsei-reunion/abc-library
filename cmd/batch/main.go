@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/yonsei-alumni/abc-library/internal/band"
+	"github.com/yonsei-alumni/abc-library/internal/claude"
 	"github.com/yonsei-alumni/abc-library/internal/config"
 	"github.com/yonsei-alumni/abc-library/internal/extract"
 	"github.com/yonsei-alumni/abc-library/internal/kyobo"
@@ -170,7 +171,7 @@ func run(ctx context.Context, log *slog.Logger, args []string) (pipeline.Report,
 	}
 	defer func() { _ = st.Close() }()
 
-	client, err := extract.NewClient()
+	client, err := claude.NewClient()
 	if err != nil {
 		return pipeline.Report{}, err
 	}

@@ -232,6 +232,7 @@ func TestLineDiff(t *testing.T) {
 		{"가\n다", "가\n나\n다", "2번째 줄부터 다름, 편집기 2줄, 요약 3줄"},
 		{"가 \n나", "가\n나", "3번째 줄부터 다름, 편집기 2줄, 요약 2줄"},
 		{"", "가", "1번째 줄부터 다름, 편집기 1줄, 요약 1줄"},
+		{"가\u00a0나\n다\n라", "가 나\n다", "3번째 줄부터 다름, 편집기 3줄, 요약 2줄"},
 	} {
 		if got := lineDiff(c.got, c.want); got != c.diff {
 			t.Errorf("lineDiff(%q, %q) = %q, want %q", c.got, c.want, got, c.diff)
@@ -283,7 +284,7 @@ func TestWriteStateScriptWithoutEditor(t *testing.T) {
 }
 
 func TestWaitWriteClosed(t *testing.T) {
-	c := &Crawler{page: openPage(t, "testdata/write.html")}
+	c := &Crawler{browserSession: &browserSession{page: openPage(t, "testdata/write.html")}}
 	c.watchDialogs()
 	if _, err := c.page.Evaluate(`sel => setTimeout(() => document.querySelector(sel).remove(), 300)`, writeEditor); err != nil {
 		t.Fatal(err)
@@ -295,7 +296,7 @@ func TestWaitWriteClosed(t *testing.T) {
 
 // TestWaitWriteClosedBlocked는 잠깐 뜬 안내와 알림창 문구가 오류에 남는지 본다.
 func TestWaitWriteClosedBlocked(t *testing.T) {
-	c := &Crawler{page: openPage(t, "testdata/write.html")}
+	c := &Crawler{browserSession: &browserSession{page: openPage(t, "testdata/write.html")}}
 	c.watchDialogs()
 	if _, err := c.page.Evaluate(`() => {
 		const e = document.createElement('div');
@@ -360,7 +361,7 @@ func pageCount(t *testing.T, c *Crawler, name string) any {
 // TestWaitWriteClosedChoosesBoard는 게시판 선택 창이 늦게 떠도 게시판을 고르고 확인을 누른 뒤 게시 버튼을 한 번 더 누르는지 본다.
 // 고정 HTML에는 숨은 확인 버튼이 뒤에 있어서 보이는 버튼을 눌러야 창이 닫힌다.
 func TestWaitWriteClosedChoosesBoard(t *testing.T) {
-	c := &Crawler{Board: "자유게시판", page: openPage(t, "testdata/board.html")}
+	c := &Crawler{Board: "자유게시판", browserSession: &browserSession{page: openPage(t, "testdata/board.html")}}
 	c.watchDialogs()
 	if err := c.waitWriteClosed(6 * time.Second); err != nil {
 		t.Fatal(err)
@@ -374,7 +375,7 @@ func TestWaitWriteClosedChoosesBoard(t *testing.T) {
 }
 
 func TestWaitWriteClosedUnknownBoard(t *testing.T) {
-	c := &Crawler{Board: "없는게시판", page: openPage(t, "testdata/board.html")}
+	c := &Crawler{Board: "없는게시판", browserSession: &browserSession{page: openPage(t, "testdata/board.html")}}
 	c.watchDialogs()
 	err := c.waitWriteClosed(8 * time.Second)
 	if err == nil || !strings.Contains(err.Error(), "#없는게시판 항목을 누르지 못했습니다") || !strings.Contains(err.Error(), "#자유게시판") {
@@ -392,7 +393,7 @@ func TestWaitWriteClosedUnknownBoard(t *testing.T) {
 }
 
 func TestWaitWriteClosedNoBoardSet(t *testing.T) {
-	c := &Crawler{page: openPage(t, "testdata/board.html")}
+	c := &Crawler{browserSession: &browserSession{page: openPage(t, "testdata/board.html")}}
 	c.watchDialogs()
 	err := c.waitWriteClosed(3 * time.Second)
 	if err == nil || !strings.Contains(err.Error(), "게시판이 정해지지 않았습니다") {
@@ -402,7 +403,7 @@ func TestWaitWriteClosedNoBoardSet(t *testing.T) {
 
 // TestWaitWriteClosedSubmitsOnce는 게시판을 고르고 게시해도 글쓰기 창이 닫히지 않을 때 게시 버튼을 되풀이해 누르지 않는지 본다.
 func TestWaitWriteClosedSubmitsOnce(t *testing.T) {
-	c := &Crawler{Board: "자유게시판", page: openPage(t, "testdata/board.html")}
+	c := &Crawler{Board: "자유게시판", browserSession: &browserSession{page: openPage(t, "testdata/board.html")}}
 	c.watchDialogs()
 	if _, err := c.page.Evaluate(`() => { window.keepEditor = true; }`); err != nil {
 		t.Fatal(err)
@@ -418,7 +419,7 @@ func TestWaitWriteClosedSubmitsOnce(t *testing.T) {
 
 // TestWaitWriteClosedChoosesOnce는 확인을 눌러도 게시판 창이 닫히지 않으면 창을 덮인 채로 게시하지 않고 실패하는지 본다.
 func TestWaitWriteClosedChoosesOnce(t *testing.T) {
-	c := &Crawler{Board: "자유게시판", page: openPage(t, "testdata/board.html")}
+	c := &Crawler{Board: "자유게시판", browserSession: &browserSession{page: openPage(t, "testdata/board.html")}}
 	c.watchDialogs()
 	if _, err := c.page.Evaluate(`() => { window.keepOpen = true; }`); err != nil {
 		t.Fatal(err)

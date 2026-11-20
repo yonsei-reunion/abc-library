@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/yonsei-alumni/abc-library/internal/band"
+	"github.com/yonsei-alumni/abc-library/internal/claude"
 	"github.com/yonsei-alumni/abc-library/internal/config"
-	"github.com/yonsei-alumni/abc-library/internal/extract"
 	"github.com/yonsei-alumni/abc-library/internal/kakao"
 	"github.com/yonsei-alumni/abc-library/internal/kyobo"
 	"github.com/yonsei-alumni/abc-library/internal/weekly"
@@ -117,7 +117,7 @@ func weeklySummary(ctx context.Context, log *slog.Logger, room, start, end strin
 		return weekly.Summary{Room: room, Start: start, End: end}, nil
 	}
 
-	client, err := extract.NewClient()
+	client, err := claude.NewClient()
 	if err != nil {
 		return weekly.Summary{}, err
 	}

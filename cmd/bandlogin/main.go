@@ -26,6 +26,7 @@ import (
 	"github.com/yonsei-alumni/abc-library/internal/bandlogin"
 	"github.com/yonsei-alumni/abc-library/internal/cloudrun"
 	"github.com/yonsei-alumni/abc-library/internal/config"
+	"github.com/yonsei-alumni/abc-library/internal/gcp"
 	"github.com/yonsei-alumni/abc-library/internal/secretmanager"
 	"github.com/yonsei-alumni/abc-library/internal/telegram"
 )
@@ -117,7 +118,7 @@ func configure(srv *bandlogin.Server, log *slog.Logger) error {
 		if region == "" {
 			return errors.New("BATCH_JOB을 두면 BATCH_REGION도 필요합니다")
 		}
-		srv.Batch = &cloudrun.Job{Project: project, Region: region, Name: job, Token: secretmanager.MetadataToken}
+		srv.Batch = &cloudrun.Job{Project: project, Region: region, Name: job, Token: gcp.MetadataToken}
 	}
 	return nil
 }

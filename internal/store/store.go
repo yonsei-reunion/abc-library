@@ -208,6 +208,14 @@ const tagOrder = `ORDER BY g.topic DESC, g.position, g.name`
 // visibleBook은 지우지 않은 언급이 있는 책(별칭 b)이다. 관리자가 언급을 모두 지운 책은 목록에서 뺀다.
 const visibleBook = `EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = b.id AND NOT m.hidden)`
 
+// bookKeyMatch는 책 키(?0)나 ISBN(?1)이 맞는 책(별칭 b)을 찾는 FROM과 WHERE의 앞부분이다. 책 키의 별칭은 k다.
+const bookKeyMatch = `FROM books b LEFT JOIN book_keys k ON k.book_id = b.id AND k.key IN (?0)
+		WHERE (k.key IS NOT NULL OR b.isbn13 = ?1)`
+
+// bookKeyRank는 bookKeyMatch로 찾은 책을 ISBN이 같은 책, ISBN 키가 맞는 책, 작품 키만 맞는 책 순서로 늘어놓는다.
+// 배치가 언급을 붙이는 책과 주간 요약이 링크하는 책이 같도록 둘이 함께 쓴다.
+const bookKeyRank = `ORDER BY b.isbn13 = ?1 DESC NULLS LAST, k.key LIKE 'isbn:%' DESC NULLS LAST, b.id`
+
 type mentionRow struct {
 	bun.BaseModel `bun:"table:mentions"`
 
@@ -359,13 +367,11 @@ func upsertBook(ctx context.Context, tx bun.Tx, b book.Book, linked bool) (int64
 	if linked && b.ISBN13 != "" {
 		sameEdition = "(b.isbn13 IS NULL OR b.isbn13 = ?1)"
 	}
-	// ISBN이 같은 책, ISBN 키가 맞는 책, 작품 키만 맞는 책 순서로 고른다.
 	// 따로 둔 판본은 키를 다른 책이 이미 가졌을 수 있으므로 책의 ISBN으로도 찾는다.
 	err := tx.NewRaw(`
 		SELECT b.id, b.edited_at IS NOT NULL AS edited
-		FROM books b LEFT JOIN book_keys k ON k.book_id = b.id AND k.key IN (?0)
-		WHERE (k.key IS NOT NULL OR b.isbn13 = ?1) AND `+sameEdition+`
-		ORDER BY b.isbn13 = ?1 DESC NULLS LAST, k.key LIKE 'isbn:%' DESC NULLS LAST, b.id
+		`+bookKeyMatch+` AND `+sameEdition+`
+		`+bookKeyRank+`
 		LIMIT 1`, bun.List(keys), b.ISBN13).Scan(ctx, &found)
 	if err != nil {
 		return 0, err
@@ -389,12 +395,20 @@ func upsertBook(ctx context.Context, tx bun.Tx, b book.Book, linked bool) (int64
 	}
 
 	// 추출하는 동안 관리자가 지운 태그는 건너뛴다.
-	for _, tag := range b.Tags {
-		if _, err := tx.NewRaw("INSERT INTO book_tags (book_id, tag) SELECT ?, name FROM tags WHERE name = ? ON CONFLICT DO NOTHING", id, tag).Exec(ctx); err != nil {
-			return 0, err
-		}
+	if err := addBookTags(ctx, tx, id, b.Tags); err != nil {
+		return 0, err
 	}
 	return id, addKeys(ctx, tx, id, keys)
+}
+
+// addBookTags는 책에 태그를 더한다. 태그 목록(tags)에 없는 태그는 버리고, 이미 붙은 태그는 그대로 둔다.
+func addBookTags(ctx context.Context, db bun.IDB, bookID int64, tags []string) error {
+	if len(tags) == 0 {
+		return nil
+	}
+	_, err := db.NewRaw(`INSERT INTO book_tags (book_id, tag) SELECT ?, name FROM tags WHERE name IN (?) ON CONFLICT DO NOTHING`,
+		bookID, bun.List(tags)).Exec(ctx)
+	return err
 }
 
 // fillMissingInfo는 책에 비어 있는 ISBN, 교보문고 상품 번호와 바코드, 출판사만 from의 값으로 채운다. 이미 있는 값은 바꾸지 않는다.
@@ -588,9 +602,8 @@ func (s *Store) Book(ctx context.Context, id int64) (book.Book, []book.Mention, 
 func (s *Store) FindBook(ctx context.Context, b book.Book) (id int64, ok bool, err error) {
 	var ids []int64
 	err = s.db.NewRaw(`
-		SELECT b.id FROM books b LEFT JOIN book_keys k ON k.book_id = b.id AND k.key IN (?0)
-		WHERE (k.key IS NOT NULL OR b.isbn13 = ?1) AND `+visibleBook+`
-		ORDER BY b.isbn13 = ?1 DESC NULLS LAST, k.key LIKE 'isbn:%' DESC NULLS LAST, b.id
+		SELECT b.id `+bookKeyMatch+` AND `+visibleBook+`
+		`+bookKeyRank+`
 		LIMIT 1`, bun.List(bookKeys(b)), b.ISBN13).Scan(ctx, &ids)
 	if err != nil || len(ids) == 0 {
 		return 0, false, err
@@ -618,8 +631,8 @@ func (r mentionView) toMention() book.Mention {
 func (s *Store) TagCounts(ctx context.Context) ([]book.Count, error) {
 	return s.counts(ctx, `
 		SELECT t.tag AS name, count(*) AS books
-		FROM book_tags t
-		WHERE EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = t.book_id AND NOT m.hidden)
+		FROM book_tags t JOIN books b ON b.id = t.book_id
+		WHERE `+visibleBook+`
 		GROUP BY t.tag
 		ORDER BY books DESC, name`)
 }

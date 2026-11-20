@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/yonsei-alumni/abc-library/internal/book"
 	"github.com/yonsei-alumni/abc-library/internal/cloudrun"
 )
 
@@ -61,18 +62,18 @@ func (s *Server) startBatch(ctx context.Context, cmd string) string {
 //     실패한 실행은 세지 않으므로 세션이 만료되어 실패한 날은 /renew 뒤에 다시 실행할 수 있다.
 //   - 주간 요약은 배치가 같은 기간의 글을 밴드에서 찾아 두 번 올리지 않으므로 더 막지 않는다.
 func batchBlocked(cmd string, execs []cloudrun.Execution, now time.Time) string {
-	today := now.In(kst).Format("2006-01-02")
+	today := now.In(book.Seoul).Format("2006-01-02")
 	for _, e := range execs {
 		if e.Running() {
-			return "실행 중인 배치가 있습니다(실행 " + e.Name + ", " + e.Created.In(kst).Format("15:04") + " 시작). 끝난 뒤에 다시 보내세요."
+			return "실행 중인 배치가 있습니다(실행 " + e.Name + ", " + e.Created.In(book.Seoul).Format("15:04") + " 시작). 끝난 뒤에 다시 보내세요."
 		}
 	}
 	if cmd != "scrap" {
 		return ""
 	}
 	for _, e := range execs {
-		if e.Succeeded && isDaily(e.Args) && e.Created.In(kst).Format("2006-01-02") == today {
-			return "오늘 일일 배치가 이미 성공했습니다(실행 " + e.Name + ", " + e.Created.In(kst).Format("15:04") + " 시작). 밴드 수집은 하루 한 번만 합니다."
+		if e.Succeeded && isDaily(e.Args) && e.Created.In(book.Seoul).Format("2006-01-02") == today {
+			return "오늘 일일 배치가 이미 성공했습니다(실행 " + e.Name + ", " + e.Created.In(book.Seoul).Format("15:04") + " 시작). 밴드 수집은 하루 한 번만 합니다."
 		}
 	}
 	return ""

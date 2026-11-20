@@ -467,3 +467,11 @@ func (s *Server) failed(w http.ResponseWriter, r *http.Request, err error) bool 
 	}
 	return true
 }
+
+// ignoreNotFound는 지울 것이 이미 없다는 오류(store.ErrNotFound)를 성공으로 본다. 같은 삭제 요청을 두 번 보내도 실패로 그리지 않는다.
+func ignoreNotFound(err error) error {
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	return err
+}

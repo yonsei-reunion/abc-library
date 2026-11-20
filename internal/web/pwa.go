@@ -62,8 +62,6 @@ func (s *Server) pwaRoutes(mux *http.ServeMux) {
 	})
 	// 서비스 워커가 미리 받아 두었다가 연결이 없을 때 보여 주는 화면이다.
 	mux.HandleFunc("GET /offline", func(w http.ResponseWriter, r *http.Request) {
-		s.render(w, r, "error", "layout", map[string]any{
-			"Title": "인터넷에 연결되지 않았습니다", "Message": "연결되면 다시 시도해 주세요. 한 번 열어 본 화면은 연결 없이도 볼 수 있습니다.",
-		})
+		s.status(w, r, http.StatusOK, "인터넷에 연결되지 않았습니다", "연결되면 다시 시도해 주세요. 한 번 열어 본 화면은 연결 없이도 볼 수 있습니다.")
 	})
 }

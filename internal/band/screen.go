@@ -28,11 +28,8 @@ var ErrUnknownKey = errors.New("받지 않는 키입니다")
 // LoginScreen은 창 없이 띄운 브라우저의 밴드 로그인 화면이다. 사람이 다른 기기에서 화면을 보며 직접 로그인한다.
 // 코드는 화면을 비추고 받은 입력을 그대로 전달할 뿐이고, 입력 내용과 화면을 저장하거나 기록하지 않는다.
 type LoginScreen struct {
-	pw      *playwright.Playwright
-	browser playwright.Browser
-	bctx    playwright.BrowserContext
-	page    playwright.Page
-	cdp     playwright.CDPSession
+	*browserSession
+	cdp playwright.CDPSession
 
 	mu     sync.Mutex
 	frame  []byte
@@ -43,24 +40,15 @@ type LoginScreen struct {
 
 // OpenLoginScreen은 새 브라우저 컨텍스트에서 밴드 로그인 화면을 열고 화면 중계를 시작한다.
 func OpenLoginScreen() (*LoginScreen, error) {
-	s := &LoginScreen{notify: make(chan struct{})}
-	var err error
-	if s.pw, err = playwright.Run(); err != nil {
+	b, err := launch(launchOptions{
+		headless:        true,
+		viewport:        &playwright.Size{Width: ScreenWidth, Height: ScreenHeight},
+		chromeUserAgent: true,
+	})
+	if err != nil {
 		return nil, err
 	}
-	if s.browser, err = s.pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(true)}); err != nil {
-		_ = s.Close()
-		return nil, err
-	}
-	if s.bctx, err = s.browser.NewContext(playwright.BrowserNewContextOptions{
-		Locale:     playwright.String("ko-KR"),
-		TimezoneId: playwright.String("Asia/Seoul"),
-		Viewport:   &playwright.Size{Width: ScreenWidth, Height: ScreenHeight},
-		UserAgent:  playwright.String(chromeUserAgent(s.browser.Version())),
-	}); err != nil {
-		_ = s.Close()
-		return nil, err
-	}
+	s := &LoginScreen{browserSession: b, notify: make(chan struct{})}
 	if err := s.start(); err != nil {
 		_ = s.Close()
 		return nil, err
@@ -68,11 +56,9 @@ func OpenLoginScreen() (*LoginScreen, error) {
 	return s, nil
 }
 
+// start는 화면 중계를 시작하고 로그인 화면을 연다.
 func (s *LoginScreen) start() error {
 	var err error
-	if s.page, err = s.bctx.NewPage(); err != nil {
-		return err
-	}
 	if s.cdp, err = s.bctx.NewCDPSession(s.page); err != nil {
 		return err
 	}
@@ -165,17 +151,5 @@ func (s *LoginScreen) Close() error {
 	s.closed = true
 	close(s.notify)
 	s.mu.Unlock()
-	if s.browser != nil {
-		_ = s.browser.Close()
-	}
-	if s.pw != nil {
-		return s.pw.Stop()
-	}
-	return nil
-}
-
-// chromeUserAgent는 일반 Chrome의 사용자 에이전트다. headless shell은 HeadlessChrome이라고 밝히므로,
-// 밴드가 자동화 브라우저로 보고 로그인을 막지 않게 바꾼다.
-func chromeUserAgent(version string) string {
-	return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + version + " Safari/537.36"
+	return s.close()
 }

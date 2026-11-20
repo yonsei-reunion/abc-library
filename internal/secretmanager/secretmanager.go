@@ -3,26 +3,22 @@
 package secretmanager
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"hash/crc32"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
-	"time"
+
+	"github.com/yonsei-alumni/abc-library/internal/gcp"
 )
 
 // Client는 한 프로젝트의 비밀을 다룬다.
 type Client struct {
 	Project string
 	// Token은 접근 토큰을 준다. 비우면 메타데이터 서버에서 받는다.
-	Token func(ctx context.Context) (string, error)
+	Token gcp.TokenFunc
 	// BaseURL은 API 주소다. 비우면 https://secretmanager.googleapis.com을 쓴다. 테스트에서 바꾼다.
 	BaseURL string
 	HTTP    *http.Client
@@ -41,7 +37,7 @@ func (c *Client) AddVersion(ctx context.Context, secret string, data []byte) (st
 	if err := c.call(ctx, http.MethodPost, c.secretPath(secret)+":addVersion", body, &out); err != nil {
 		return "", fmt.Errorf("비밀 %s에 새 버전을 올리지 못했습니다: %w", secret, err)
 	}
-	return versionOf(out.Name), nil
+	return gcp.LastSegment(out.Name), nil
 }
 
 // DisableOthers는 keep을 뺀 사용 중인 버전을 모두 사용 중지하고, 끈 버전 번호를 돌려준다.
@@ -57,7 +53,7 @@ func (c *Client) DisableOthers(ctx context.Context, secret, keep string) ([]stri
 	}
 	var disabled []string
 	for _, v := range list.Versions {
-		n := versionOf(v.Name)
+		n := gcp.LastSegment(v.Name)
 		if n == keep {
 			continue
 		}
@@ -77,86 +73,10 @@ func (c *Client) secretPath(secret string) string {
 	return base + "/v1/projects/" + url.PathEscape(c.Project) + "/secrets/" + url.PathEscape(secret)
 }
 
-func versionOf(name string) string {
-	return name[strings.LastIndex(name, "/")+1:]
-}
-
 func (c *Client) call(ctx context.Context, method, u string, in, out any) error {
-	tokenFn := c.Token
-	if tokenFn == nil {
-		tokenFn = MetadataToken
+	token := c.Token
+	if token == nil {
+		token = gcp.MetadataToken
 	}
-	token, err := tokenFn(ctx)
-	if err != nil {
-		return err
-	}
-	var body io.Reader
-	if in != nil {
-		b, err := json.Marshal(in)
-		if err != nil {
-			return err
-		}
-		body = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, u, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := httpClient(c.HTTP).Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		// 오류 응답에는 비밀 값이 없다. 상태와 메시지만 남긴다.
-		var e struct {
-			Error struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&e)
-		return fmt.Errorf("HTTP %d %s", resp.StatusCode, e.Error.Message)
-	}
-	if out == nil {
-		return nil
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
-}
-
-func httpClient(hc *http.Client) *http.Client {
-	if hc != nil {
-		return hc
-	}
-	return &http.Client{Timeout: 30 * time.Second}
-}
-
-// metadataTokenURL은 Cloud Run 메타데이터 서버에서 서비스 계정 접근 토큰을 받는 주소다.
-const metadataTokenURL = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
-
-// MetadataToken은 메타데이터 서버에서 서비스 계정의 접근 토큰을 받는다. Cloud Run에서만 된다.
-func MetadataToken(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metadataTokenURL, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Metadata-Flavor", "Google")
-	resp, err := httpClient(nil).Do(req)
-	if err != nil {
-		return "", fmt.Errorf("메타데이터 서버에서 토큰을 받지 못했습니다: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	var out struct {
-		AccessToken string `json:"access_token"`
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("메타데이터 서버에서 토큰을 받지 못했습니다: HTTP %d", resp.StatusCode)
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out.AccessToken == "" {
-		return "", errors.New("메타데이터 서버의 토큰 응답을 읽지 못했습니다")
-	}
-	return out.AccessToken, nil
+	return gcp.Call(ctx, c.HTTP, token, method, u, in, out)
 }

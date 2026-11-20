@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -318,22 +316,6 @@ func TestExtractUsesLinkedProductWithoutISBN(t *testing.T) {
 	}
 }
 
-func TestExtractLimitsLinkedProductLookups(t *testing.T) {
-	var links []book.Link
-	for i := range maxLinkedProducts + 3 {
-		links = append(links, book.Link{URL: fmt.Sprintf("https://product.kyobobook.co.kr/detail/S%012d", i+1)})
-	}
-	search := &productSearch{}
-	api := &fakeAPI{responses: []string{message("end_turn", textBlock(m{"books": []any{}}))}}
-	in := Input{PostedAt: postedAt, Text: "책 목록", Links: links}
-	if _, err := New(api, search, testTags).Extract(context.Background(), in); err != nil {
-		t.Fatal(err)
-	}
-	if len(search.queries) != maxLinkedProducts {
-		t.Errorf("상품 번호 검색은 %d번까지만 해야 한다: %v", maxLinkedProducts, search.queries)
-	}
-}
-
 func TestExtractUsesChosenLinksWhenPostCoversSeveralBooks(t *testing.T) {
 	final := m{"books": []m{
 		found("당신 인생의 이야기", "", []string{"SF"}, "요약", []int{1, 3, 7}),
@@ -459,27 +441,6 @@ func TestExtractUsesGivenTags(t *testing.T) {
 	for _, want := range []string{`"enum":["기후","AI","인문"]`, `모임 주제 태그(기후, AI)`} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("요청에 %s가 없다", want)
-		}
-	}
-}
-
-func TestIsStoreLink(t *testing.T) {
-	for raw, want := range map[string]bool{
-		"https://product.kyobobook.co.kr/detail/S000001981838": true,
-		"https://www.yes24.com/Product/Goods/1":                true,
-		"https://aladin.co.kr/shop/wproduct.aspx?ItemId=1":     true,
-		"https://www.amazon.com/dp/1":                          true,
-		"https://www.amazon.co.jp/dp/1":                        true,
-		"https://ridibooks.com/books/1":                        true,
-		"https://smartstore.naver.com/shop/1":                  true,
-		"https://www.hani.co.kr/arti/1.html":                   false,
-		"https://www.youtube.com/watch?v=1":                    false,
-		"https://blog.naver.com/x/1":                           false,
-		"https://notkyobobook.co.kr/":                          false,
-	} {
-		u, _ := url.Parse(raw)
-		if got := IsStoreLink(u); got != want {
-			t.Errorf("IsStoreLink(%s) = %v, want %v", raw, got, want)
 		}
 	}
 }

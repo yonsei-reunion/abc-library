@@ -26,6 +26,22 @@ import (
 const (
 	maxImages    = 4
 	maxImageSize = 4 << 20
+
+	// homeURL은 로그인한 뒤 처음 여는 밴드 홈이다.
+	homeURL = "https://band.us/home"
+	// defaultDelay는 Crawler.Delay의 기본값이다.
+	defaultDelay = 2 * time.Second
+	// maxCommentPages는 접힌 이전 댓글을 펼치는 최대 횟수다.
+	maxCommentPages = 10
+
+	// latestCommentSort는 게시글 목록의 정렬 메뉴에서 고르는 항목이다.
+	latestCommentSort = "최신 댓글순"
+	// resortSettle은 정렬을 바꾼 뒤 목록이 다시 그려지기를 기다리는 시간이다.
+	resortSettle = 3 * time.Second
+	// scrollPause는 목록을 내린 뒤 다음 글이 그려지기를 기다리는 시간이다.
+	scrollPause = 1500 * time.Millisecond
+	// maxIdleScrolls는 새 카드 없이 목록을 내린 횟수가 이만큼이면 목록 끝으로 보는 기준이다.
+	maxIdleScrolls = 5
 )
 
 var (
@@ -66,6 +82,11 @@ func PostURL(bandNo string, postNo int) string {
 	return fmt.Sprintf("https://band.us/band/%s/post/%d", bandNo, postNo)
 }
 
+// PostListURL은 게시글 목록 주소다.
+func PostListURL(bandNo string) string {
+	return fmt.Sprintf("https://band.us/band/%s/post", bandNo)
+}
+
 // OnPostPage는 브라우저가 아직 그 게시글 화면에 있는지 알려 준다. 밴드는 band.us와 www.band.us를 오간다.
 func OnPostPage(pageURL, bandNo string, postNo int) bool {
 	u, err := url.Parse(pageURL)
@@ -86,53 +107,26 @@ func InstallHeadlessBrowser() error {
 	return playwright.Install(&playwright.RunOptions{Browsers: []string{"chromium"}, OnlyInstallShell: true, Verbose: false})
 }
 
-func newContext(browser playwright.Browser, statePath string) (playwright.BrowserContext, error) {
-	opts := playwright.BrowserNewContextOptions{
-		Locale:     playwright.String("ko-KR"),
-		TimezoneId: playwright.String("Asia/Seoul"),
-	}
-	if statePath != "" {
-		opts.StorageStatePath = playwright.String(statePath)
-	}
-	return browser.NewContext(opts)
-}
-
 // Login은 브라우저 창을 띄우고, 사람이 로그인을 마치면 세션을 statePath에 저장한다.
 func Login(statePath string, timeout time.Duration) error {
-	pw, err := playwright.Run()
+	b, err := launch(launchOptions{headless: false})
 	if err != nil {
 		return err
 	}
-	defer func() { _ = pw.Stop() }()
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(false)})
-	if err != nil {
-		return err
-	}
-	defer func() { _ = browser.Close() }()
-	bctx, err := newContext(browser, "")
-	if err != nil {
-		return err
-	}
-	page, err := bctx.NewPage()
-	if err != nil {
-		return err
-	}
-	if _, err := page.Goto("https://band.us/home"); err != nil {
+	defer func() { _ = b.close() }()
+	if _, err := b.page.Goto(homeURL); err != nil {
 		return err
 	}
 	fmt.Println("브라우저 창에서 밴드에 로그인하세요. 로그인을 마치면 세션을 저장하고 창을 닫습니다.")
 
 	deadline := time.Now().Add(timeout)
-	for !loggedIn(bctx, page) {
+	for !loggedIn(b.bctx, b.page) {
 		if time.Now().After(deadline) {
 			return errors.New("로그인을 기다리다가 시간이 지났습니다")
 		}
 		time.Sleep(2 * time.Second)
 	}
-	if _, err := bctx.StorageState(playwright.BrowserContextStorageStateOptions{Path: playwright.String(statePath)}); err != nil {
-		return err
-	}
-	return os.Chmod(statePath, 0o600)
+	return b.saveState(statePath)
 }
 
 func loggedIn(bctx playwright.BrowserContext, page playwright.Page) bool {
@@ -144,7 +138,7 @@ func loggedIn(bctx playwright.BrowserContext, page playwright.Page) bool {
 		return false
 	}
 	for _, c := range cookies {
-		if c.Name == "band_session" && c.Value != "" {
+		if c.Name == SessionCookie && c.Value != "" {
 			return true
 		}
 	}
@@ -159,10 +153,7 @@ type Crawler struct {
 	// Delay는 페이지를 열기 전에 쉬는 시간이다. 밴드에 부담을 주지 않기 위해 둔다.
 	Delay time.Duration
 
-	pw      *playwright.Playwright
-	browser playwright.Browser
-	bctx    playwright.BrowserContext
-	page    playwright.Page
+	*browserSession
 
 	// dialogs는 페이지가 띄운 알림창 수다. 삭제된 글은 알림창을 띄우고 목록으로 돌아간다.
 	dialogs atomic.Int32
@@ -176,23 +167,11 @@ func Open(statePath, bandNo string) (*Crawler, error) {
 	if _, err := os.Stat(statePath); err != nil {
 		return nil, fmt.Errorf("세션 파일 %s를 읽을 수 없습니다. make band-login으로 먼저 로그인하세요: %w", statePath, err)
 	}
-	c := &Crawler{BandNo: bandNo, Delay: 2 * time.Second}
-	var err error
-	if c.pw, err = playwright.Run(); err != nil {
+	b, err := launch(launchOptions{headless: true, statePath: statePath})
+	if err != nil {
 		return nil, err
 	}
-	if c.browser, err = c.pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(true)}); err != nil {
-		_ = c.Close()
-		return nil, err
-	}
-	if c.bctx, err = newContext(c.browser, statePath); err != nil {
-		_ = c.Close()
-		return nil, err
-	}
-	if c.page, err = c.bctx.NewPage(); err != nil {
-		_ = c.Close()
-		return nil, err
-	}
+	c := &Crawler{BandNo: bandNo, Delay: defaultDelay, browserSession: b}
 	c.watchDialogs()
 	return c, nil
 }
@@ -228,13 +207,7 @@ func shorten(s string, n int) string {
 
 // Close는 브라우저를 닫는다.
 func (c *Crawler) Close() error {
-	if c.browser != nil {
-		_ = c.browser.Close()
-	}
-	if c.pw != nil {
-		return c.pw.Stop()
-	}
-	return nil
+	return c.close()
 }
 
 func (c *Crawler) open(url string) error {
@@ -255,22 +228,30 @@ func IsLoginURL(raw string) bool {
 
 // waitFor는 요소가 화면에 붙을 때까지 기다린다. 밴드는 세션이 끝났으면 페이지를 띄운 뒤 스크립트로 로그인 화면으로 옮겨 가므로,
 // 기다리다 실패하면 로그인 화면인지 확인해서 ErrSessionExpired를 돌려준다.
-func (c *Crawler) waitFor(loc playwright.Locator, timeout float64) error {
-	err := loc.WaitFor(playwright.LocatorWaitForOptions{State: playwright.WaitForSelectorStateAttached, Timeout: playwright.Float(timeout)})
+func (c *Crawler) waitFor(loc playwright.Locator, timeout time.Duration) error {
+	err := loc.WaitFor(playwright.LocatorWaitForOptions{State: playwright.WaitForSelectorStateAttached, Timeout: ms(timeout)})
 	if err != nil && IsLoginURL(c.page.URL()) {
 		return ErrSessionExpired
 	}
 	return err
 }
 
+// openPostList는 게시글 목록을 열고 ready가 그려지기를 기다린다. what은 기다리다 실패했을 때 오류에 넣을 설명이다.
+func (c *Crawler) openPostList(ready playwright.Locator, what string) error {
+	if err := c.open(PostListURL(c.BandNo)); err != nil {
+		return err
+	}
+	if err := c.waitFor(ready, pageWaitTimeout); err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	return nil
+}
+
 // LatestPostNo는 게시글 목록에서 가장 최근 글의 번호를 읽는다.
 func (c *Crawler) LatestPostNo() (int, error) {
-	if err := c.open(fmt.Sprintf("https://band.us/band/%s/post", c.BandNo)); err != nil {
-		return 0, err
-	}
 	sel := fmt.Sprintf(`a[href*="/band/%s/post/"]`, c.BandNo)
-	if err := c.waitFor(c.page.Locator(sel).First(), 20000); err != nil {
-		return 0, fmt.Errorf("게시글 목록을 읽지 못했습니다: %w", err)
+	if err := c.openPostList(c.page.Locator(sel).First(), "게시글 목록을 읽지 못했습니다"); err != nil {
+		return 0, err
 	}
 	v, err := c.page.Evaluate(`bandNo => Math.max(0, ...[...document.querySelectorAll('a[href*="/band/' + bandNo + '/post/"]')]
 		.map(a => Number((a.getAttribute('href').match(/\/post\/(\d+)/) || [])[1] || 0)))`, c.BandNo)
@@ -306,58 +287,62 @@ const cardsScript = `bandNo => JSON.stringify([...document.querySelectorAll('art
 // done이 참인 카드를 만나면 그때 그려진 카드까지만 모으고, 목록 끝에 닿거나 limit개를 모아도 멈춘다.
 // 정렬은 이 화면에서만 바뀌고 계정 설정에 저장되지 않는다.
 func (c *Crawler) RecentlyCommented(done func(Activity) bool, limit int) ([]Activity, error) {
-	if err := c.open(fmt.Sprintf("https://band.us/band/%s/post", c.BandNo)); err != nil {
+	if err := c.sortByLatestComment(); err != nil {
 		return nil, err
 	}
-	sortButton := c.page.Locator("._btnSort").First()
-	if err := c.waitFor(sortButton, 20000); err != nil {
-		return nil, fmt.Errorf("게시글 목록의 정렬 버튼을 찾지 못했습니다: %w", err)
-	}
-	click := playwright.LocatorClickOptions{Timeout: playwright.Float(5000)}
-	if err := sortButton.Click(click); err != nil {
-		return nil, err
-	}
-	if err := c.page.Locator("button._optionMenuLink", playwright.PageLocatorOptions{HasText: "최신 댓글순"}).First().Click(click); err != nil {
-		return nil, fmt.Errorf("'최신 댓글순' 정렬을 고르지 못했습니다: %w", err)
-	}
-	if err := c.waitFor(c.page.Locator("._btnSort", playwright.PageLocatorOptions{HasText: "최신 댓글순"}).First(), 20000); err != nil {
-		return nil, fmt.Errorf("정렬이 '최신 댓글순'으로 바뀌지 않았습니다: %w", err)
-	}
-	// 정렬 버튼은 바로 바뀌지만 목록은 새로 불러온 뒤에 다시 그린다.
-	time.Sleep(3 * time.Second)
-
 	var cards []Activity
 	seen := map[int]bool{}
-	for idle := 0; len(cards) < limit && idle < 5; {
-		v, err := c.page.Evaluate(cardsScript, c.BandNo)
+	// idle은 새 카드 없이 목록을 내린 횟수다.
+	for idle := 0; len(cards) < limit && idle < maxIdleScrolls; {
+		drawn, err := evalJSON[[]Activity](c.page, cardsScript, c.BandNo)
 		if err != nil {
-			return nil, err
-		}
-		raw, _ := v.(string)
-		var drawn []Activity
-		if err := json.Unmarshal([]byte(raw), &drawn); err != nil {
 			return nil, fmt.Errorf("게시글 목록을 읽지 못했습니다: %w", err)
 		}
-		found := false
-		idle++
+		found, added := false, 0
 		for _, a := range drawn {
 			if !seen[a.No] {
 				seen[a.No] = true
 				cards = append(cards, a)
 				found = found || done(a)
-				idle = 0
+				added++
 			}
 		}
 		if found {
 			break
 		}
+		if added == 0 {
+			idle++
+		} else {
+			idle = 0
+		}
 		// 마지막 카드가 보이게 내리면 다음 글을 불러온다.
 		if err := c.page.Locator("article._postMainWrap").Last().ScrollIntoViewIfNeeded(); err != nil {
 			return nil, err
 		}
-		time.Sleep(1500 * time.Millisecond)
+		time.Sleep(scrollPause)
 	}
 	return cards[:min(len(cards), limit)], nil
+}
+
+// sortByLatestComment는 게시글 목록을 열고 정렬을 '최신 댓글순'으로 바꾼 뒤, 목록이 다시 그려지기를 기다린다.
+func (c *Crawler) sortByLatestComment() error {
+	sortButton := c.page.Locator("._btnSort").First()
+	if err := c.openPostList(sortButton, "게시글 목록의 정렬 버튼을 찾지 못했습니다"); err != nil {
+		return err
+	}
+	click := playwright.LocatorClickOptions{Timeout: ms(clickTimeout)}
+	if err := sortButton.Click(click); err != nil {
+		return err
+	}
+	if err := c.page.Locator("button._optionMenuLink", playwright.PageLocatorOptions{HasText: latestCommentSort}).First().Click(click); err != nil {
+		return fmt.Errorf("'최신 댓글순' 정렬을 고르지 못했습니다: %w", err)
+	}
+	if err := c.waitFor(c.page.Locator("._btnSort", playwright.PageLocatorOptions{HasText: latestCommentSort}).First(), pageWaitTimeout); err != nil {
+		return fmt.Errorf("정렬이 '최신 댓글순'으로 바뀌지 않았습니다: %w", err)
+	}
+	// 정렬 버튼은 바로 바뀌지만 목록은 새로 불러온 뒤에 다시 그린다.
+	time.Sleep(resortSettle)
+	return nil
 }
 
 // extractScript는 게시글 상세 화면에서 본문, 외부 링크, 첨부 사진, 게시 시각과 댓글을 읽는다.
@@ -420,12 +405,12 @@ var moreComments = regexp.MustCompile(`이전 댓글|댓글 더보기`)
 
 // loadAllComments는 접혀 있는 이전 댓글을 펼친다. 댓글 목록을 더 불러오기만 하고 쓰기 동작은 하지 않는다.
 func (c *Crawler) loadAllComments() {
-	for range 10 {
+	for range maxCommentPages {
 		btn := c.page.Locator(".dPostCommentMainView").Locator("button, a", playwright.LocatorLocatorOptions{HasText: moreComments}).First()
 		if n, err := btn.Count(); err != nil || n == 0 {
 			return
 		}
-		if err := btn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(5000)}); err != nil {
+		if err := btn.Click(playwright.LocatorClickOptions{Timeout: ms(clickTimeout)}); err != nil {
 			return
 		}
 		time.Sleep(time.Second)
@@ -439,7 +424,7 @@ func (c *Crawler) Post(no int) (Post, error) {
 		return Post{}, err
 	}
 	// 로그인 화면으로 옮겨 간 글을 삭제된 글로 여기지 않는다.
-	if err := c.waitFor(c.page.Locator(".postWrap .postMain .postBody"), 15000); err != nil {
+	if err := c.waitFor(c.page.Locator(".postWrap .postMain .postBody"), postWaitTimeout); err != nil {
 		if errors.Is(err, ErrSessionExpired) {
 			return Post{}, err
 		}
@@ -450,40 +435,62 @@ func (c *Crawler) Post(no int) (Post, error) {
 	if err != nil {
 		return Post{}, err
 	}
-	// 삭제된 글은 '삭제되었거나 찾을 수 없습니다' 알림창을 띄우고 게시글 목록으로 옮겨 간다.
-	// 목록 화면에도 같은 구조의 글이 있으므로, 그 글을 이 번호의 글로 읽지 않게 확인한다.
-	if c.dialogs.Load() > 0 || !OnPostPage(c.page.URL(), c.BandNo, no) {
+	if c.leftPost(no) {
 		return Post{}, ErrNotFound
 	}
 	raw, ok := v.(string)
-	if !ok {
+	if !ok { // 화면에 글이 없으면 스크립트가 null을 돌려준다.
 		return Post{}, ErrNotFound
 	}
 	var s scraped
 	if err := json.Unmarshal([]byte(raw), &s); err != nil {
 		return Post{}, err
 	}
-	postedAt, err := ParseTime(s.Time, time.Now())
+	p, err := s.post(no, time.Now())
+	if err != nil {
+		return Post{}, err
+	}
+	p.Images = c.downloadImages(s.Images)
+	return p, nil
+}
+
+// leftPost는 게시글 no의 화면을 벗어났는지 알려 준다.
+// 삭제된 글은 '삭제되었거나 찾을 수 없습니다' 알림창을 띄우고 게시글 목록으로 옮겨 간다.
+// 목록 화면에도 같은 구조의 글이 있으므로, 그 글을 이 번호의 글로 읽지 않게 확인한다.
+func (c *Crawler) leftPost(no int) bool {
+	return c.dialogs.Load() > 0 || !OnPostPage(c.page.URL(), c.BandNo, no)
+}
+
+// post는 화면에서 읽은 내용을 게시글 no로 바꾼다. 사진은 따로 내려받는다.
+// 연도가 빠진 시각은 now를 기준으로 읽고, 댓글 시각을 읽지 못했거나 게시 시각보다 앞서면 게시 시각으로 본다.
+func (s scraped) post(no int, now time.Time) (Post, error) {
+	postedAt, err := ParseTime(s.Time, now)
 	if err != nil {
 		return Post{}, fmt.Errorf("게시글 %d: %w", no, err)
 	}
 	p := Post{No: no, PostedAt: postedAt, Text: s.Text, Links: s.Links, CommentCount: s.CommentCount}
 	for _, sc := range s.Comments {
-		at, err := ParseTime(sc.Time, time.Now())
+		at, err := ParseTime(sc.Time, now)
 		if err != nil || at.Before(postedAt) {
 			at = postedAt
 		}
 		p.Comments = append(p.Comments, Comment{At: at, Text: sc.Text, Links: sc.Links})
 	}
-	for _, src := range s.Images {
-		if len(p.Images) == maxImages {
+	return p, nil
+}
+
+// downloadImages는 사진을 maxImages장까지 내려받는다. 내려받지 못한 사진은 건너뛴다.
+func (c *Crawler) downloadImages(srcs []string) []Image {
+	var images []Image
+	for _, src := range srcs {
+		if len(images) == maxImages {
 			break
 		}
 		if img, err := c.download(src); err == nil {
-			p.Images = append(p.Images, img)
+			images = append(images, img)
 		}
 	}
-	return p, nil
+	return images
 }
 
 func (c *Crawler) download(src string) (Image, error) {

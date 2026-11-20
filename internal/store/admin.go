@@ -167,11 +167,7 @@ func (s *Store) UpdateBook(ctx context.Context, b book.Book) error {
 		if _, err := tx.NewRaw(`DELETE FROM book_tags WHERE book_id = ?`, b.ID).Exec(ctx); err != nil {
 			return err
 		}
-		if len(b.Tags) == 0 {
-			return nil
-		}
-		_, err = tx.NewRaw(`INSERT INTO book_tags (book_id, tag) SELECT ?, name FROM tags WHERE name IN (?)`, b.ID, bun.List(b.Tags)).Exec(ctx)
-		return err
+		return addBookTags(ctx, tx, b.ID, b.Tags)
 	})
 }
 

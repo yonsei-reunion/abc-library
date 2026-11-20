@@ -66,7 +66,7 @@ WIF_PROVIDER=abc-library
 # 배치가 Claude를 Workload Identity Federation으로 호출할 때 쓰는 값이다.
 # Claude Console의 Workload identity 규칙 abc-batch에서 나온 ID라서 비밀이 아니다. 규칙은 abc-batch 서비스 계정의
 # Google ID 토큰을 Console 서비스 계정 abc-batch로 바꿔 주고, 토큰은 abc-library 워크스페이스(월 지출 한도 $200)에서만 쓴다.
-# 값이 있으면 extract.NewClient가 API 키 대신 WIF를 쓴다. 비우고 배포하면 claude-api-key로 돌아간다.
+# 값이 있으면 claude.NewClient가 API 키 대신 WIF를 쓴다. 비우고 배포하면 claude-api-key로 돌아간다.
 ANTHROPIC_FEDERATION_RULE_ID="fdrl_01VMxpGzcr5veU12AxcDqZBp"
 ANTHROPIC_ORGANIZATION_ID="effc7f0b-884f-4d61-87ef-d244fa71c789"
 ANTHROPIC_SERVICE_ACCOUNT_ID="svac_01SmHw7Zb9N4QvRpYRzvXjiM"

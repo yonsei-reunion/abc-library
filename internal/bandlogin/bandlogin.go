@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/yonsei-alumni/abc-library/internal/band"
+	"github.com/yonsei-alumni/abc-library/internal/book"
 	"github.com/yonsei-alumni/abc-library/internal/telegram"
 )
 
@@ -171,25 +172,19 @@ func (s *Server) save(ctx context.Context, c *loginSession) string {
 	}
 	msg := "밴드 세션을 갱신했습니다(" + where + ")."
 	if exp := tokenExpiry(state); !exp.IsZero() {
-		msg += " 토큰 만료 " + exp.In(kst).Format("2006-01-02 15:04") + "."
+		msg += " 토큰 만료 " + exp.In(book.Seoul).Format("2006-01-02 15:04") + "."
 	}
 	s.Log.Info("밴드 세션을 갱신했습니다", "저장", where)
 	return msg
 }
 
-var kst = time.FixedZone("KST", 9*60*60)
-
+// tokenExpiry는 storageState JSON에서 밴드 세션 토큰이 끝나는 시각을 읽는다. 읽지 못하면 0이다.
 func tokenExpiry(state []byte) time.Time {
 	ls, err := band.StateLifetimes(state)
 	if err != nil {
 		return time.Time{}
 	}
-	for _, l := range ls {
-		if l.Name == "band_session" {
-			return l.TokenExp
-		}
-	}
-	return time.Time{}
+	return band.SessionTokenExp(ls)
 }
 
 func (s *Server) notify(ctx context.Context, text string) {

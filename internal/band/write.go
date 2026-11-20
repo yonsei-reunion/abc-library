@@ -1,7 +1,6 @@
 package band
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -114,19 +113,11 @@ const recentTextsScript = `() => JSON.stringify([...document.querySelectorAll('a
 
 // RecentTexts는 게시글 목록 첫 화면에 나온 최근 글들의 본문을 읽는다. 같은 글을 두 번 올리지 않으려고 확인할 때 쓴다.
 func (c *Crawler) RecentTexts() ([]string, error) {
-	if err := c.open(fmt.Sprintf("https://band.us/band/%s/post", c.BandNo)); err != nil {
+	if err := c.openPostList(c.page.Locator("article._postMainWrap").First(), "게시글 목록을 읽지 못했습니다"); err != nil {
 		return nil, err
 	}
-	if err := c.waitFor(c.page.Locator("article._postMainWrap").First(), 20000); err != nil {
-		return nil, fmt.Errorf("게시글 목록을 읽지 못했습니다: %w", err)
-	}
-	v, err := c.page.Evaluate(recentTextsScript)
+	texts, err := evalJSON[[]string](c.page, recentTextsScript)
 	if err != nil {
-		return nil, err
-	}
-	raw, _ := v.(string)
-	var texts []string
-	if err := json.Unmarshal([]byte(raw), &texts); err != nil {
 		return nil, fmt.Errorf("게시글 목록을 읽지 못했습니다: %w", err)
 	}
 	return texts, nil
@@ -167,13 +158,13 @@ func (c *Crawler) Write(content, marker string) error {
 		return fmt.Errorf("글쓰기 편집기에 넣은 내용이 요약과 달라서 올리지 않았습니다(%s)", lineDiff(got, content))
 	}
 	c.takeDialogs()
-	click := playwright.LocatorClickOptions{Timeout: playwright.Float(10000)}
-	if err := c.page.Locator(writeSubmit).First().Click(click); err != nil {
+	if err := c.page.Locator(writeSubmit).First().Click(playwright.LocatorClickOptions{Timeout: ms(writeClickTimeout)}); err != nil {
 		return fmt.Errorf("게시 버튼을 누르지 못했습니다: %w", err)
 	}
 	if err := c.waitWriteClosed(writeCloseTimeout); err != nil {
 		return err
 	}
+	// 글쓰기 창이 닫힌 뒤 목록에 새 글이 그려지기를 기다린다.
 	time.Sleep(3 * time.Second)
 	posted, err := c.Posted(marker)
 	if err != nil {
@@ -238,8 +229,7 @@ func (c *Crawler) chooseBoard() (bool, error) {
 	// 확인을 누르면 밴드는 창을 닫고 글쓰기 창으로 돌아갈 뿐 글을 올리지 않는다(2026-11 실측: 90초 동안 그대로이고 본문만 7자, 2문단 늘었다).
 	// 첫 클릭은 이 창에 막혀서 올라가지 않았으므로 여기서 한 번 더 눌러도 글은 하나만 올라간다.
 	time.Sleep(500 * time.Millisecond)
-	click := playwright.LocatorClickOptions{Timeout: playwright.Float(float64(boardClickTimeout.Milliseconds()))}
-	if err := c.page.Locator(writeSubmit).First().Click(click); err != nil {
+	if err := c.page.Locator(writeSubmit).First().Click(playwright.LocatorClickOptions{Timeout: ms(boardClickTimeout)}); err != nil {
 		return false, fmt.Errorf("게시판을 고른 뒤 게시 버튼을 누르지 못했습니다(%s)", c.describeBoard())
 	}
 	return true, nil
@@ -260,12 +250,7 @@ func (c *Crawler) clickText(text string) bool {
 
 // boardLayer는 게시판 선택 창의 구조를 읽는다. 창이 없으면 빈 문자열이다.
 func (c *Crawler) boardLayer() string {
-	v, err := c.page.Evaluate(boardLayerScript, boardPrompt)
-	if err != nil {
-		return ""
-	}
-	s, _ := v.(string)
-	return s
+	return evalString(c.page, boardLayerScript, boardPrompt)
 }
 
 // describeBoard는 게시판을 고르지 못했을 때 오류에 넣을 설명을 만든다.
@@ -275,12 +260,7 @@ func (c *Crawler) describeBoard() string {
 
 // writeState는 지금 화면의 상태를 JSON으로 읽는다. 읽지 못하면 빈 문자열이다.
 func (c *Crawler) writeState() string {
-	v, err := c.page.Evaluate(writeStateScript, map[string]any{"layer": writeLayer, "editor": writeEditor, "submit": writeSubmit})
-	if err != nil {
-		return ""
-	}
-	s, _ := v.(string)
-	return s
+	return evalString(c.page, writeStateScript, map[string]any{"layer": writeLayer, "editor": writeEditor, "submit": writeSubmit})
 }
 
 // describeWrite는 글쓰기 창이 닫히지 않았을 때 오류에 넣을 설명을 만든다.
@@ -303,19 +283,16 @@ func (c *Crawler) fillEditor(content string) (string, error) {
 	if strings.TrimSpace(content) == "" {
 		return "", errors.New("올릴 글이 비어 있습니다")
 	}
-	if err := c.open(fmt.Sprintf("https://band.us/band/%s/post", c.BandNo)); err != nil {
+	opener := c.page.Locator(openWriteBtn).First()
+	if err := c.openPostList(opener, "글쓰기 버튼을 찾지 못했습니다"); err != nil {
 		return "", err
 	}
-	click := playwright.LocatorClickOptions{Timeout: playwright.Float(10000)}
-	opener := c.page.Locator(openWriteBtn).First()
-	if err := c.waitFor(opener, 20000); err != nil {
-		return "", fmt.Errorf("글쓰기 버튼을 찾지 못했습니다: %w", err)
-	}
+	click := playwright.LocatorClickOptions{Timeout: ms(writeClickTimeout)}
 	if err := opener.Click(click); err != nil {
 		return "", fmt.Errorf("글쓰기 창을 열지 못했습니다: %w", err)
 	}
 	editor := c.page.Locator(writeEditor).First()
-	if err := editor.WaitFor(playwright.LocatorWaitForOptions{State: playwright.WaitForSelectorStateVisible, Timeout: playwright.Float(15000)}); err != nil {
+	if err := editor.WaitFor(playwright.LocatorWaitForOptions{State: playwright.WaitForSelectorStateVisible, Timeout: ms(editorWaitTimeout)}); err != nil {
 		return "", fmt.Errorf("글쓰기 편집기를 찾지 못했습니다: %w", err)
 	}
 	if err := editor.Click(click); err != nil {
@@ -367,10 +344,9 @@ func (c *Crawler) waitSnippets(urls int) int {
 
 // lineDiff는 처음 달라지는 줄 번호와 양쪽 줄 수를 알려 준다. 글 내용은 넣지 않는다.
 func lineDiff(got, content string) string {
-	g := strings.Split(strings.TrimSpace(got), "\n")
-	w := strings.Split(strings.TrimSpace(content), "\n")
+	g, w := comparableLines(got), comparableLines(content)
 	n := 0
-	for n < len(g) && n < len(w) && strings.TrimRight(g[n], " \t") == strings.TrimRight(w[n], " \t") {
+	for n < len(g) && n < len(w) && g[n] == w[n] {
 		n++
 	}
 	return fmt.Sprintf("%d번째 줄부터 다름, 편집기 %d줄, 요약 %d줄", n+1, len(g), len(w))
@@ -378,12 +354,15 @@ func lineDiff(got, content string) string {
 
 // SameLines는 편집기에서 읽은 글이 content와 같은지 줄 단위로 비교한다. 줄 끝 공백은 무시한다.
 func SameLines(got, content string) bool {
-	norm := func(s string) string {
-		lines := strings.Split(strings.TrimSpace(strings.ReplaceAll(s, " ", " ")), "\n")
-		for i, l := range lines {
-			lines[i] = strings.TrimRight(l, " \t")
-		}
-		return strings.Join(lines, "\n")
+	return slices.Equal(comparableLines(got), comparableLines(content))
+}
+
+// comparableLines는 SameLines와 lineDiff가 비교하는 줄이다. 편집기가 넣는 줄바꿈 없는 공백(U+00A0)은 공백으로 보고,
+// 글 앞뒤의 공백과 줄 끝 공백은 뺀다.
+func comparableLines(s string) []string {
+	lines := strings.Split(strings.TrimSpace(strings.ReplaceAll(s, "\u00a0", " ")), "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " \t")
 	}
-	return norm(got) == norm(content)
+	return lines
 }
