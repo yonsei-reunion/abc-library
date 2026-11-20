@@ -108,12 +108,13 @@ elif [[ "$target" == bandlogin ]]; then
   # 로그인하는 몇 분 동안만 켜진다. 브라우저와 링크 토큰이 메모리에 있으므로 인스턴스는 하나만 둔다.
   # 화면 스트림(SSE)이 연결 하나를 계속 쓰므로 입력 요청이 함께 들어오게 동시성을 1보다 크게 둔다.
   # 요청이 없는 동안에도 로그인 감지와 시간 초과 처리가 돌도록 CPU를 늘 쓴다.
+  # 텔레그램 /batch와 /weekly는 BATCH_JOB을 실행한다. 실행 권한은 make gcp-schedule이 준다.
   gcloud run deploy "$LOGIN_SERVICE" --image "$image" --region "$region" --project "$PROJECT" \
     --service-account "$LOGIN_SA" \
     --min-instances 0 --max-instances 1 --concurrency 10 --timeout 900 \
     --cpu 1 --memory 2Gi --no-cpu-throttling \
     --set-secrets "TELEGRAM_BOT_TOKEN=${TELEGRAM_TOKEN_SECRET}:latest,TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET_NAME}:latest" \
-    --update-env-vars "GOOGLE_CLOUD_PROJECT=${PROJECT},BAND_STATE_SECRET=${BAND_STATE_SECRET},TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}" \
+    --update-env-vars "GOOGLE_CLOUD_PROJECT=${PROJECT},BAND_STATE_SECRET=${BAND_STATE_SECRET},TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID},BATCH_JOB=${BATCH_JOB},BATCH_REGION=${BATCH_REGION}" \
     "${flags[@]}"
   gcloud run services describe "$LOGIN_SERVICE" --region "$region" --project "$PROJECT" --format 'value(status.url)'
 else

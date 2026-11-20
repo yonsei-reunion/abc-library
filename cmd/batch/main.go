@@ -48,13 +48,17 @@ func main() {
 	case "login":
 		err = login()
 	case "run":
-		err = run(ctx, log, os.Args[2:])
+		var r pipeline.Report
+		r, err = run(ctx, log, os.Args[2:])
 		alertSession(ctx, log, "run", err)
+		reportResult(ctx, log, "run", runSummary(r), err)
 	case "status":
 		err = status(ctx, log)
 	case "weekly":
-		err = summarizeWeek(ctx, log, os.Args[2:])
+		var outcome string
+		outcome, err = summarizeWeek(ctx, log, os.Args[2:])
 		alertSession(ctx, log, "weekly", err)
+		reportResult(ctx, log, "weekly", outcome, err)
 	case "seed":
 		err = seed(ctx, log, os.Args[2:])
 	case "probe":
@@ -141,7 +145,7 @@ func login() error {
 	return nil
 }
 
-func run(ctx context.Context, log *slog.Logger, args []string) error {
+func run(ctx context.Context, log *slog.Logger, args []string) (pipeline.Report, error) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	limit := fs.Int("limit", 30, "한 번에 Claude로 추출할 게시글 수의 상한(0이면 제한 없음)")
 	recheckDays := fs.Int("recheck-days", 7, "수정된 본문과 댓글을 다시 확인할 최근 게시글의 기간(일). 새 댓글은 기간과 상관없이 찾는다")
@@ -155,41 +159,40 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 		}
 		no, err := strconv.Atoi(s)
 		if err != nil || no < 1 {
-			return fmt.Errorf("-redo-posts의 글 번호가 잘못되었습니다: %q", s)
+			return pipeline.Report{}, fmt.Errorf("-redo-posts의 글 번호가 잘못되었습니다: %q", s)
 		}
 		redoList = append(redoList, no)
 	}
 
 	st, err := openStore(ctx, log)
 	if err != nil {
-		return err
+		return pipeline.Report{}, err
 	}
 	defer func() { _ = st.Close() }()
 
 	client, err := extract.NewClient()
 	if err != nil {
-		return err
+		return pipeline.Report{}, err
 	}
 	if err := band.InstallHeadlessBrowser(); err != nil {
-		return err
+		return pipeline.Report{}, err
 	}
 	crawler, err := band.Open(statePath(), config.BandNo())
 	if err != nil {
-		return err
+		return pipeline.Report{}, err
 	}
 	defer func() { _ = crawler.Close() }()
 
 	// 태그는 관리 화면에서 고친 DB의 목록에서만 고른다.
 	tags, err := st.Tags(ctx)
 	if err != nil {
-		return err
+		return pipeline.Report{}, err
 	}
 	if len(tags) == 0 {
-		return errors.New("태그 목록이 비어 있습니다. 관리 화면에서 태그를 더하세요")
+		return pipeline.Report{}, errors.New("태그 목록이 비어 있습니다. 관리 화면에서 태그를 더하세요")
 	}
 	ex := extract.New(&client.Beta.Messages, kyobo.NewClient(), tags)
-	_, err = pipeline.Run(ctx, crawler, ex, st, pipeline.Options{Limit: *limit, RecheckDays: *recheckDays, RedoFrom: *redoFrom, RedoPosts: redoList}, log)
-	return err
+	return pipeline.Run(ctx, crawler, ex, st, pipeline.Options{Limit: *limit, RecheckDays: *recheckDays, RedoFrom: *redoFrom, RedoPosts: redoList}, log)
 }
 
 func status(ctx context.Context, log *slog.Logger) error {

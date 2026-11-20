@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# bandlogin 서비스 주소를 텔레그램 봇의 웹훅으로 등록한다. 서비스를 처음 배포한 뒤나 웹훅 비밀 토큰을 바꾼 뒤에 실행한다.
+# bandlogin 서비스 주소를 텔레그램 봇의 웹훅으로 등록하고, 봇의 명령 목록(/renew, /batch, /weekly)을 설정한다.
+# 서비스를 처음 배포한 뒤나 웹훅 비밀 토큰이나 명령을 바꾼 뒤에 실행한다.
 #
 #   make telegram-webhook
 #
@@ -32,3 +33,15 @@ if [[ "$resp" != *'"ok":true'* ]]; then
   exit 1
 fi
 echo "웹훅을 등록했습니다: ${url}/telegram"
+
+# 텔레그램 입력창의 / 메뉴에 나오는 명령 목록. internal/bandlogin의 helpText와 맞춘다.
+commands='{"commands":[{"command":"renew","description":"밴드 다시 로그인"},{"command":"batch","description":"일일 배치 실행"},{"command":"weekly","description":"대화방 주간 요약 실행"}]}'
+resp="$(curl -sS --config - -H "Content-Type: application/json" --data-binary "$commands" <<EOF
+url = "https://api.telegram.org/bot${token}/setMyCommands"
+EOF
+)"
+if [[ "$resp" != *'"ok":true'* ]]; then
+  echo "명령 목록을 설정하지 못했습니다: $resp" >&2
+  exit 1
+fi
+echo "명령 목록을 설정했습니다: /renew, /batch, /weekly"

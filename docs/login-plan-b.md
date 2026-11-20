@@ -59,7 +59,7 @@ abc-band-login ─ 새 버전 ─> Secret Manager band-state (배치 Job이 late
 
 - 이미지는 `Dockerfile.batch`처럼 Chromium headless shell만 넣는다(`band.InstallHeadlessBrowser`).
 - Cloud Run 설정: 최소 인스턴스 0, 최대 1, 동시성 10(화면 스트림이 연결 하나를 계속 쓰므로 1이면 입력이 막힌다), 요청 제한 시간 15분, CPU를 요청이 없어도 쓰는 설정(`--no-cpu-throttling`), 메모리 2GiB. 로그인을 하는 몇 분 동안만 켜지고 평소 비용은 거의 없다.
-- 서비스 계정 `abc-band-login`을 새로 만든다. 권한은 `band-state` 비밀에 `secretVersionAdder`와 `secretVersionManager`, 텔레그램 비밀 두 개(`telegram-bot-token`, `telegram-webhook-secret`)에 `secretAccessor`뿐이다.
+- 서비스 계정 `abc-band-login`을 새로 만든다. 권한은 `band-state` 비밀에 `secretVersionAdder`와 `secretVersionManager`, 텔레그램 비밀 두 개(`telegram-bot-token`, `telegram-webhook-secret`)에 `secretAccessor`뿐이다. 2026-11-20에 텔레그램 `/batch`와 `/weekly`를 더하면서 `abc-batch` Job에 `run.jobsExecutorWithOverrides`와 `run.viewer`를 더했다.
 
 ### 경로
 
