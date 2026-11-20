@@ -29,7 +29,8 @@ const (
 	boardClickTimeout = 5 * time.Second
 
 	// snippetPoll은 링크 미리보기 카드 수를 세는 간격이고, snippetSettle은 카드 수가 이만큼 그대로면 다 붙은 것으로 본다.
-	// 밴드는 주소가 많으면 일정 수를 넘는 카드를 붙이지 않으므로 주소 수만큼 기다리지 않는다.
+	// 미리보기를 주지 않는 사이트는 카드가 붙지 않으므로 주소 수만큼 기다리지 않는다(2026-11 실측: 주소 23개에 카드 17개,
+	// 빠진 카드는 순서와 상관없이 위키백과, 알라딘, medium 같은 사이트였다).
 	snippetPoll   = 2 * time.Second
 	snippetSettle = 3
 	// snippetTimeout은 카드가 붙기를 기다리는 최대 시간이다. 넘으면 붙은 카드만으로 게시한다.
