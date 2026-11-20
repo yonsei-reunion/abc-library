@@ -185,7 +185,7 @@ go run ./cmd/batch weekly -band-no <시험용 밴드 번호>   # 시험용 밴�
 | Claude 인증 | 운영 배치는 Workload Identity Federation으로 Claude Console 조직의 `abc-library` 워크스페이스(월 지출 한도 $200)에서 인증한다. Max 구독의 월 API 크레딧에서 비용이 빠진다. 로컬은 `CLAUDE_API_KEY` |
 | 이미지 | Artifact Registry `abc-library` 저장소(웹은 `asia-southeast1`, 배치는 `asia-northeast3`). 최근 5개만 남긴다 |
 | 실행 일정 | Cloud Scheduler `abc-batch-daily`가 매일 03:00(KST)에 Job을 실행하고, `abc-batch-weekly`가 매주 월요일 07:00(KST)에 같은 Job을 인자 `weekly`로 실행한다(대화방 주간 요약). Job이 실패하면 Cloud Monitoring이 메일을 보낸다 |
-| 밴드 다시 로그인 | Cloud Run 서비스 `abc-band-login`(`cmd/bandlogin`), `asia-northeast3`(서울). 텔레그램 봇에 `/renew`를 보내면 폰에서 로그인할 1회용 링크를 답한다. `/batch`와 `/weekly`로 배치 Job을 실행한다 |
+| 밴드 다시 로그인 | Cloud Run 서비스 `abc-band-login`(`cmd/bandlogin`), `asia-northeast3`(서울). 텔레그램 봇에 `/renew`를 보내면 폰에서 로그인할 1회용 링크를 답한다. `/scrap`과 `/weekly`로 배치 Job을 실행한다 |
 | 대화방 메시지 | 운영자의 Google 스프레드시트. kakao-to-google-sheet 앱이 쌓고, 시트에 붙은 Apps Script 웹 앱으로 읽는다 |
 
 ## 로컬 개발
@@ -222,8 +222,8 @@ go run ./cmd/batch weekly -band-no <시험용 밴드 번호>   # 시험용 밴�
 | `TELEGRAM_CHAT_ID` | 봇이 명령을 받고 알림을 보낼 대화방 번호. 배치는 이 값과 봇 토큰이 함께 있을 때만 알린다 |
 | `TELEGRAM_WEBHOOK_SECRET` | 텔레그램 웹훅의 비밀 토큰(`X-Telegram-Bot-Api-Secret-Token`). bandlogin만 쓴다 |
 | `GOOGLE_CLOUD_PROJECT`, `BAND_STATE_SECRET` | bandlogin이 세션을 올릴 Secret Manager 프로젝트와 비밀 이름(기본 `band-state`) |
-| `BATCH_JOB`, `BATCH_REGION` | bandlogin이 텔레그램 `/batch`와 `/weekly`로 실행할 Cloud Run Job과 리전. 없으면 실행하지 않는다 |
-| `TELEGRAM_REPORT` | `1`이면 배치가 끝날 때 결과를 텔레그램으로 알린다. bandlogin이 `/batch`와 `/weekly`로 실행할 때만 넣는다 |
+| `BATCH_JOB`, `BATCH_REGION` | bandlogin이 텔레그램 `/scrap`과 `/weekly`로 실행할 Cloud Run Job과 리전. 없으면 실행하지 않는다 |
+| `TELEGRAM_REPORT` | `1`이면 배치가 끝날 때 결과를 텔레그램으로 알린다. bandlogin이 `/scrap`과 `/weekly`로 실행할 때만 넣는다 |
 | `SITE_URL` | 사이트 공개 주소(기본 `http://localhost:{PORT}`). 로그인 리디렉션 URI와 POST 요청의 출처 확인에 쓴다. 주간 요약은 책 상세 화면 링크에 쓴다(기본 `https://abc-lib.web.app`) |
 
 ## 배포
@@ -237,7 +237,7 @@ Google Cloud 프로젝트 `abc-library-512606`(이름 abc-library)에 배포한�
 | 밴드 다시 로그인 | Cloud Run 서비스 `abc-band-login`, 서비스 계정 `abc-band-login`, 최소 인스턴스 0, 최대 1, 동시성 10, 요청 제한 시간 15분, CPU 늘 사용, 1 vCPU, 2GiB, 공개 접근. `scripts/gcp-env.sh`의 `TELEGRAM_CHAT_ID`가 비어 있으면 배포하지 않는다 |
 | 비밀 값 | `db-pwd`(웹, 배치), `band-state`(배치, `/secrets/band/band-state.json`에 파일로 올림), `claude-api-key`(배치), `kakao-sheet-url`, `kakao-sheet-token`(배치), `google-client-secret`, `session-secret`, `user-id-secret`(웹), `telegram-bot-token`(bandlogin, 배치), `telegram-webhook-secret`(bandlogin). bandlogin은 `band-state`의 값을 읽지 못하고 새 버전 올리기와 버전 끄기만 한다 |
 | 실행 일정 | `abc-batch-daily`(매일 03:00, `run`), `abc-batch-weekly`(월요일 07:00, 같은 Job을 overrides로 `weekly` 실행) |
-| 실행 계정 | `abc-scheduler`(Job 실행. 주간 요약의 인자 바꾸기에 `roles/run.jobsExecutorWithOverrides`가 필요하다), `abc-band-login`(텔레그램 `/batch`와 `/weekly`. `abc-batch` Job에만 `roles/run.jobsExecutorWithOverrides`와 실행 기록을 읽는 `roles/run.viewer`), `abc-deployer`(GitHub Actions 배포) |
+| 실행 계정 | `abc-scheduler`(Job 실행. 주간 요약의 인자 바꾸기에 `roles/run.jobsExecutorWithOverrides`가 필요하다), `abc-band-login`(텔레그램 `/scrap`과 `/weekly`. `abc-batch` Job에만 `roles/run.jobsExecutorWithOverrides`와 실행 기록을 읽는 `roles/run.viewer`), `abc-deployer`(GitHub Actions 배포) |
 
 처음 한 번은 `.envrc`를 읽은 셸에서 다음 순서로 실행한다. 모두 다시 실행해도 된다.
 
@@ -268,7 +268,7 @@ make release ARGS=<커밋>      # origin/main에 있는 그 커밋까지만 배�
 GitHub Actions가 GCP 토큰을 받는 Workload Identity Federation 공급자에는 이 저장소의 `release` 브랜치 조건이 걸려 있다. 배포 브랜치를 바꾸면 `scripts/gcp-setup.sh`의 조건도 고치고 `make gcp-setup`을 다시 실행한다. 저장소를 옮기거나 이름을 바꾸면 GitHub이 토큰에 새 이름을 넣으므로 배포가 `rejected by the attribute condition`으로 실패한다. `scripts/gcp-env.sh`의 `GITHUB_REPO`를 고치고 공급자 조건과 배포 서비스 계정의 `workloadIdentityUser` 바인딩을 새 이름으로 바꾼다.
 
 - 밴드 세션은 로그인 후 48시간에 끝나고, 쓰는 동안에도 다시 발급되지 않는다(2026-11-10 `batch probe`로 확인). 배치가 끝날 때 만료가 24시간 안으로 다가왔거나 만료로 실패했으면 텔레그램으로 알린다. 텔레그램에서 `/renew`를 보내고 답으로 온 링크를 폰에서 열어 로그인하면 bandlogin이 `band-state`에 새 버전을 올리고 이전 버전을 끈다. 이 컴퓨터에서는 전처럼 `make band-renew`(`make band-login` 뒤에 `make band-secret`)를 실행해도 된다. Job은 비밀의 최신 버전을 읽으므로 다시 배포하지 않아도 된다.
-- 텔레그램에서 배치를 실행한다. `/batch`는 일일 배치(`batch run`), `/weekly`는 대화방 주간 요약(`batch weekly`)이다. bandlogin이 Cloud Run Admin API로 `abc-batch` Job을 인자를 바꿔 실행하고 실행 이름을 답한다. 실행 중인 배치가 있으면 어느 명령도 실행하지 않는다. 밴드 수집은 하루 한 번이므로 `/batch`는 오늘(KST) 성공한 일일 배치가 있으면 실행하지 않는다. 실패한 실행은 세지 않아서, 세션 만료로 새벽 배치가 실패한 날은 `/renew`로 다시 로그인한 뒤 `/batch`를 보내면 된다. `/weekly`는 배치가 같은 기간의 글을 찾아 두 번 올리지 않으므로 더 막지 않는다. 이렇게 실행한 배치는 끝날 때 처리 건수나 요약을 올렸는지를 텔레그램으로 알린다(`TELEGRAM_REPORT=1`). 실패하면 오류 내용 없이 실패만 알리고, 원인은 Job 로그에서 본다.
+- 텔레그램에서 배치를 실행한다. `/scrap`은 일일 배치(`batch run`), `/weekly`는 대화방 주간 요약(`batch weekly`)이다. bandlogin이 Cloud Run Admin API로 `abc-batch` Job을 인자를 바꿔 실행하고 실행 이름을 답한다. 실행 중인 배치가 있으면 어느 명령도 실행하지 않는다. 밴드 수집은 하루 한 번이므로 `/scrap`은 오늘(KST) 성공한 일일 배치가 있으면 실행하지 않는다. 실패한 실행은 세지 않아서, 세션 만료로 새벽 배치가 실패한 날은 `/renew`로 다시 로그인한 뒤 `/scrap`을 보내면 된다. `/weekly`는 배치가 같은 기간의 글을 찾아 두 번 올리지 않으므로 더 막지 않는다. 이렇게 실행한 배치는 끝날 때 처리 건수나 요약을 올렸는지를 텔레그램으로 알린다(`TELEGRAM_REPORT=1`). 실패하면 오류 내용 없이 실패만 알리고, 원인은 Job 로그에서 본다.
 - `batch probe`는 밴드가 토큰을 만료 전에 다시 발급하는지 보는 시험 명령이다. 세션의 복사본으로 만료 18시간 전부터 만료 5분 뒤까지 밴드 홈을 몇 번 열고 `band_session`과 `rt`의 만료 시각만 로그에 남긴다. 운영 비밀에는 쓰지 않는다. 그 세션을 쓰는 마지막 정기 실행 뒤에 시작한다.
 - Claude API 키를 바꾸려면 `gcloud secrets versions add claude-api-key --data-file=-`로 새 버전을 올린다.
 - 웹 서버는 `robots.txt`와 `X-Robots-Tag: noindex`로 검색엔진 수집을 막는다.

@@ -1,7 +1,7 @@
 // bandlogin은 폰에서 밴드에 다시 로그인하게 하는 서버다(Cloud Run 서비스 abc-band-login).
 //
 // 텔레그램에서 /renew를 보내면 로그인 화면 링크를 답하고, 로그인을 마치면 세션을 Secret Manager의 새 버전으로 올린다.
-// /batch와 /weekly를 보내면 배치 Job(BATCH_JOB)을 batch run, batch weekly로 실행한다.
+// /scrap과 /weekly를 보내면 배치 Job(BATCH_JOB)을 batch run, batch weekly로 실행한다.
 // 자세한 흐름은 internal/bandlogin과 docs/login-plan-b.md에 있다.
 //
 //	bandlogin          운영. 텔레그램 웹훅을 받는다.
@@ -111,7 +111,7 @@ func configure(srv *bandlogin.Server, log *slog.Logger) error {
 	srv.BaseURL = os.Getenv("BASE_URL")
 	srv.Notifier = &telegram.Client{Token: token}
 	srv.Saver = secretSaver{sm: &secretmanager.Client{Project: project}, secret: secret, log: log}
-	// BATCH_JOB이 없으면 /batch와 /weekly에 설정하지 않았다고 답한다.
+	// BATCH_JOB이 없으면 /scrap과 /weekly에 설정하지 않았다고 답한다.
 	if job := os.Getenv("BATCH_JOB"); job != "" {
 		region := os.Getenv("BATCH_REGION")
 		if region == "" {

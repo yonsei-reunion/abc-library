@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 배치 Job을 하루 한 번 실행하는 Cloud Scheduler 작업, 월요일 아침에 대화방 주간 요약(batch weekly)으로 실행하는 작업과,
-# Job이 실패하면 메일을 보내는 알림을 만든다. 텔레그램 /batch와 /weekly로 Job을 실행하는 bandlogin에도 실행 권한을 준다.
+# Job이 실패하면 메일을 보내는 알림을 만든다. 텔레그램 /scrap과 /weekly로 Job을 실행하는 bandlogin에도 실행 권한을 준다.
 # 배치 Job을 처음 배포한 뒤에 한 번 실행한다. 이미 있으면 건너뛰거나 갱신하므로 다시 실행해도 된다.
 #
 #   make gcp-schedule                         알림은 gcloud에 로그인한 계정의 메일로 보낸다
@@ -25,7 +25,7 @@ echo "  roles/run.invoker ($BATCH_JOB → $SCHEDULER_SA)"
 gcloud run jobs add-iam-policy-binding "$BATCH_JOB" --region "$BATCH_REGION" --project "$PROJECT" \
   --member "serviceAccount:$SCHEDULER_SA" --role roles/run.jobsExecutorWithOverrides >/dev/null
 echo "  roles/run.jobsExecutorWithOverrides ($BATCH_JOB → $SCHEDULER_SA)"
-# bandlogin은 텔레그램 /batch와 /weekly로 같은 Job을 인자를 바꿔 실행하고, 실행 중이거나 오늘 성공한 실행이 있는지
+# bandlogin은 텔레그램 /scrap과 /weekly로 같은 Job을 인자를 바꿔 실행하고, 실행 중이거나 오늘 성공한 실행이 있는지
 # 실행 기록으로 확인한다(run.executions.list는 run.viewer에 있다). 권한은 이 Job에만 준다.
 if [[ -n "$TELEGRAM_CHAT_ID" ]]; then
   for role in roles/run.jobsExecutorWithOverrides roles/run.viewer; do

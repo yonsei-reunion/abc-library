@@ -1,4 +1,4 @@
-// Package bandlogin은 폰에서 밴드에 다시 로그인하게 하는 서버다. 텔레그램의 /batch와 /weekly로 배치 Job도 실행한다(batch.go).
+// Package bandlogin은 폰에서 밴드에 다시 로그인하게 하는 서버다. 텔레그램의 /scrap과 /weekly로 배치 Job도 실행한다(batch.go).
 //
 // 텔레그램에서 /renew를 보내면 서버가 창 없는 브라우저로 밴드 로그인 화면을 열고, 10분 동안 쓸 수 있는 1회용 링크를 답한다.
 // 링크를 연 폰은 화면을 보며 직접 로그인하고(전화번호와 문자 인증), 서버는 화면을 비추고 입력을 전달할 뿐이다.
@@ -63,7 +63,7 @@ type Server struct {
 	Poll    time.Duration
 	Log     *slog.Logger
 	Now     func() time.Time
-	// Batch는 /batch와 /weekly로 실행할 배치 Job이다. nil이면 실행하지 않는다.
+	// Batch는 /scrap과 /weekly로 실행할 배치 Job이다. nil이면 실행하지 않는다.
 	Batch BatchJob
 
 	batchMu sync.Mutex
@@ -210,7 +210,7 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// webhook은 텔레그램 업데이트를 받는다. 허용한 대화방의 /renew에 링크를 답하고, /batch와 /weekly로 배치를 실행한다.
+// webhook은 텔레그램 업데이트를 받는다. 허용한 대화방의 /renew에 링크를 답하고, /scrap과 /weekly로 배치를 실행한다.
 // 다른 요청에도 200을 줘서 텔레그램이 같은 업데이트를 다시 보내지 않게 한다.
 func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
 	if s.WebhookSecret == "" || !equal(r.Header.Get(telegram.SecretHeader), s.WebhookSecret) {
@@ -236,7 +236,7 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		s.notify(ctx, "10분 안에 폰에서 열어 밴드에 로그인하세요. 처음 연 기기에서만 열립니다.\n"+s.baseURL(r)+"/login#"+token)
-	case "batch", "weekly":
+	case "scrap", "weekly":
 		s.notify(ctx, s.startBatch(ctx, u.Command()))
 	case "start", "help":
 		s.notify(ctx, helpText)
@@ -245,7 +245,7 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) {
 }
 
 const helpText = `/renew 밴드에 다시 로그인할 링크를 보냅니다.
-/batch 일일 배치를 실행합니다. 오늘 성공한 일일 배치가 있으면 실행하지 않습니다.
+/scrap 밴드를 수집하는 일일 배치를 실행합니다. 오늘 성공한 일일 배치가 있으면 실행하지 않습니다.
 /weekly 대화방 주간 요약 배치를 실행합니다. 이미 올린 주는 다시 올리지 않습니다.`
 
 func (s *Server) baseURL(r *http.Request) string {

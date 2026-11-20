@@ -1,5 +1,5 @@
 // Package cloudrun은 Cloud Run Admin API(v2)로 Job을 실행하고 최근 실행 기록을 읽는다.
-// bandlogin이 텔레그램의 /batch와 /weekly를 받아 배치 Job을 실행할 때 쓴다.
+// bandlogin이 텔레그램의 /scrap과 /weekly를 받아 배치 Job을 실행할 때 쓴다.
 package cloudrun
 
 import (

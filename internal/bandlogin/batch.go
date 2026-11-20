@@ -26,7 +26,7 @@ var batchKind = map[string]struct {
 	// obj는 목적격 조사를 붙인 이름이다.
 	obj string
 }{
-	"batch":  {[]string{"run"}, "일일 배치를"},
+	"scrap":  {[]string{"run"}, "일일 배치를"},
 	"weekly": {[]string{"weekly"}, "대화방 주간 요약을"},
 }
 
@@ -67,7 +67,7 @@ func batchBlocked(cmd string, execs []cloudrun.Execution, now time.Time) string 
 			return "실행 중인 배치가 있습니다(실행 " + e.Name + ", " + e.Created.In(kst).Format("15:04") + " 시작). 끝난 뒤에 다시 보내세요."
 		}
 	}
-	if cmd != "batch" {
+	if cmd != "scrap" {
 		return ""
 	}
 	for _, e := range execs {
