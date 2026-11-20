@@ -17,16 +17,23 @@ import (
 const (
 	writeLayer  = "section._lyWrap"
 	writeEditor = writeLayer + " div._richEditor[contenteditable=true]"
-	// 편집기는 글 속 주소마다 링크 미리보기 카드를 붙인다. 요약에는 주소가 수십 개라 카드를 지운다(본문의 링크는 남는다).
-	writeSnippetDelete = writeEditor + ` .cke_widget_wrapper[data-type="snippet"] button._btnDelete`
-	writeSubmit        = writeLayer + " button._btnSubmitPost"
-	openWriteBtn       = "button._btnOpenWriteLayer"
+	// 편집기는 글 속 주소마다 링크 미리보기 카드를 붙인다. 손으로 올린 글처럼 카드를 남긴다.
+	writeSnippet = writeEditor + ` .cke_widget_wrapper[data-type="snippet"]`
+	writeSubmit  = writeLayer + " button._btnSubmitPost"
+	openWriteBtn = "button._btnOpenWriteLayer"
 
 	// boardPrompt는 게시판 선택 창의 안내 문구다. 게시판을 쓰는 밴드는 게시 버튼을 누르면 이 창을 띄우고,
 	// 게시판을 고르지 않으면 글을 올리지 않는다.
 	boardPrompt = "게시판을 선택해야 글이 등록됩니다"
 	// boardClickTimeout은 게시판 선택 창의 항목과 확인이 나타나기를 기다리는 시간이다.
 	boardClickTimeout = 5 * time.Second
+
+	// snippetPoll은 링크 미리보기 카드 수를 세는 간격이고, snippetSettle은 카드 수가 이만큼 그대로면 다 붙은 것으로 본다.
+	// 밴드는 주소가 많으면 일정 수를 넘는 카드를 붙이지 않으므로 주소 수만큼 기다리지 않는다.
+	snippetPoll   = 2 * time.Second
+	snippetSettle = 3
+	// snippetTimeout은 카드가 붙기를 기다리는 최대 시간이다. 넘으면 붙은 카드만으로 게시한다.
+	snippetTimeout = 90 * time.Second
 
 	// writeCloseTimeout은 게시 버튼을 누른 뒤 글쓰기 창이 닫히기를 기다리는 시간이다.
 	writeCloseTimeout = 90 * time.Second
@@ -319,10 +326,10 @@ func (c *Crawler) fillEditor(content string) (string, error) {
 	  e.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true})); }`, strings.TrimSpace(content)); err != nil {
 		return "", fmt.Errorf("글쓰기 편집기에 글을 넣지 못했습니다: %w", err)
 	}
-	if err := c.removeSnippets(); err != nil {
-		return "", err
-	}
-	typed, err := editor.Evaluate(`e => [...e.querySelectorAll(':scope > p')].map(p => p.innerText.replace(/\n$/, '')).join('\n')`, nil)
+	c.waitSnippets(strings.Count(content, "http://") + strings.Count(content, "https://"))
+	// 미리보기 카드는 문단 사이의 div로 붙으므로 문단만 읽는다. 빈 편집기의 안내 문구 문단은 글이 아니므로 뺀다.
+	typed, err := editor.Evaluate(`e => [...e.querySelectorAll(':scope > p')].filter(p => !p.querySelector('._placeholder'))
+	  .map(p => p.innerText.replace(/\n$/, '')).join('\n')`, nil)
 	if err != nil {
 		return "", err
 	}
@@ -330,22 +337,31 @@ func (c *Crawler) fillEditor(content string) (string, error) {
 	return got, nil
 }
 
-// removeSnippets는 편집기가 붙인 링크 미리보기 카드를 모두 지운다. 카드는 주소마다 조금씩 늦게 붙으므로
-// 지운 뒤 잠시 기다려 새 카드가 없을 때까지 되풀이한다.
-func (c *Crawler) removeSnippets() error {
-	// 카드는 편집기 밖으로 스크롤돼 있어 Playwright의 클릭이 닿지 않으므로 페이지에서 버튼을 직접 누른다.
-	const script = `sel => { const bs = [...document.querySelectorAll(sel)]; bs.forEach(b => b.click()); return bs.length; }`
-	for round := 0; round < 5; round++ {
-		time.Sleep(3 * time.Second)
-		v, err := c.page.Evaluate(script, writeSnippetDelete)
+// waitSnippets는 편집기가 링크 미리보기 카드를 붙이기를 기다린다. 카드는 주소마다 조금씩 늦게 붙으므로
+// 카드 수가 주소 수(urls)에 이르거나 한동안 늘지 않으면 끝낸다. 카드는 없어도 글은 올라가므로 오류로 치지 않는다.
+func (c *Crawler) waitSnippets(urls int) int {
+	if urls == 0 {
+		return 0
+	}
+	last, same := -1, 0
+	for deadline := time.Now().Add(snippetTimeout); time.Now().Before(deadline); {
+		time.Sleep(snippetPoll)
+		n, err := c.page.Locator(writeSnippet).Count()
 		if err != nil {
-			return fmt.Errorf("링크 미리보기를 지우지 못했습니다: %w", err)
+			continue
 		}
-		if n, _ := v.(int); n == 0 {
-			return nil
+		if n >= urls {
+			return n
+		}
+		if n == last {
+			if same++; same >= snippetSettle {
+				return n
+			}
+		} else {
+			last, same = n, 0
 		}
 	}
-	return errors.New("링크 미리보기가 계속 생겨서 지우지 못했습니다")
+	return last
 }
 
 // lineDiff는 처음 달라지는 줄 번호와 양쪽 줄 수를 알려 준다. 글 내용은 넣지 않는다.
